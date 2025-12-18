@@ -1,441 +1,445 @@
-# 🎬 Project 6: GNN-based Recommendation System
+# 🎬 Project 6: Recommendation System Challenge
 
 **Difficulty:** ⭐⭐⭐ Advanced  
-**Time:** 5-6 hours  
-**Goal:** Build a movie recommendation system using graph neural networks
+**Estimated Time:** 15-20 hours  
+**Prerequisites:** Complete Projects 1-5
 
 ---
 
-## 📖 Background
+## 🎯 Your Mission
 
-Recommendation systems are EVERYWHERE:
-- 🎬 Netflix: "You might like..."
-- 🛒 Amazon: "Customers also bought..."
-- 🎵 Spotify: "Discover Weekly"
+You're building the recommendation engine for a streaming service. Users interact with content (movies, shows), and you need to predict: **What will each user want to watch next?**
 
-**Your Mission:** Build a GNN-based recommender using collaborative filtering on a user-item graph!
-
----
-
-## 🧠 The Key Insight: Bipartite Graphs
-
-Recommendations are naturally a **graph problem**:
-
-```
-User-Item Bipartite Graph:
-
-    👤 Alice ─────┬───── 🎬 Inception
-                  │
-    👤 Bob ───────┼───── 🎬 Avatar
-                  │
-    👤 Carol ─────┴───── 🎬 Titanic
-    
-Edges = "User watched/rated movie"
-
-Question: Should Alice watch Titanic?
-GNN Answer: Check what similar users liked!
-```
+This project combines:
+- Graph neural networks
+- Recommendation systems
+- Real-world evaluation challenges
+- Production-level considerations
 
 ---
 
-## 🚀 Task 1: Understanding the Problem
+## 🧠 Before You Begin: The Recommendation Landscape
 
-### Collaborative Filtering Explained:
+Spend 3+ hours on conceptual understanding before any code.
 
-```
-Traditional ML:   User Features + Item Features → Prediction
-GNN Approach:     User-Item Graph Structure → Embeddings → Prediction
+### The Evolution of RecSys
 
-Key insight: You don't NEED explicit features!
-             Graph structure IS the feature!
-```
+Research and summarize (one paragraph each):
 
-### 🤔 Think About It:
+1. **Collaborative Filtering:** What is it? How does it work?
+2. **Matrix Factorization:** How did this improve on early CF?
+3. **Deep Learning RecSys:** What neural approaches emerged?
+4. **Graph-based RecSys:** How do GNNs fit into this landscape?
 
-**Q: Why is this called "collaborative" filtering?**
+### Why Graphs?
 
-<details>
-<summary>Answer</summary>
+Think through these questions:
 
-Users "collaborate" through their interactions!
+1. How can you represent user-item interactions as a graph?
+2. What type of graph is this? (Hint: bipartite)
+3. Draw an example user-item graph with 4 users and 6 items
+4. In this graph, what does it mean for two users to be "close"?
+5. What does message passing DO in this context?
 
-If Alice and Bob both liked Inception and Avatar, they likely have similar taste. So Bob's love for Titanic suggests Alice might like it too.
+### The Cold Start Problem
 
-The "collaboration" happens through the graph structure!
-</details>
-
----
-
-## 🚀 Task 2: Load and Prepare MovieLens Data
-
-### About MovieLens 100K:
-| Property | Value |
-|----------|-------|
-| Users | 943 |
-| Movies | 1,682 |
-| Ratings | 100,000 |
-| Sparsity | 93.7% (most user-item pairs unknown) |
-
-### 🧩 Your Task: Create User-Item Graph
-```python
-import pandas as pd
-import torch
-from torch_geometric.data import Data
-
-# Load ratings (you'll need to download MovieLens 100K)
-# From: https://grouplens.org/datasets/movielens/100k/
-
-ratings = pd.read_csv('ml-100k/u.data', sep='\t',
-                      names=['user_id', 'item_id', 'rating', 'timestamp'])
-
-# Convert to 0-indexed
-ratings['user_id'] = ratings['user_id'] - 1
-ratings['item_id'] = ratings['item_id'] - 1
-
-num_users = ???
-num_items = ???
-
-print(f"Users: {num_users}, Movies: {num_items}")
-print(f"Ratings: {len(ratings)}")
-
-# Create edge index
-# Users: nodes 0 to num_users-1
-# Items: nodes num_users to num_users+num_items-1
-
-edge_user = torch.tensor(ratings['user_id'].values)
-edge_item = torch.tensor(ratings['item_id'].values) + ???  # Shift item IDs!
-
-# Undirected graph (user→item AND item→user)
-edge_index = torch.stack([
-    torch.cat([edge_user, edge_item]),
-    torch.cat([edge_item, edge_user])
-])
-
-print(f"Edge index shape: {edge_index.shape}")
-```
-
-### 🤔 Key Question:
-
-**Q: Why do we make the graph UNDIRECTED (add reverse edges)?**
-
-<details>
-<summary>Answer</summary>
-
-Message passing goes both ways!
-
-- User → Item: "What movies did this user like?"
-- Item → User: "Who liked this movie?"
-
-Both directions help build better embeddings!
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-import pandas as pd
-import torch
-
-ratings = pd.read_csv('ml-100k/u.data', sep='\t',
-                      names=['user_id', 'item_id', 'rating', 'timestamp'])
-
-ratings['user_id'] = ratings['user_id'] - 1
-ratings['item_id'] = ratings['item_id'] - 1
-
-num_users = ratings['user_id'].nunique()
-num_items = ratings['item_id'].nunique()
-
-print(f"Users: {num_users}, Movies: {num_items}")
-print(f"Ratings: {len(ratings)}")
-
-edge_user = torch.tensor(ratings['user_id'].values)
-edge_item = torch.tensor(ratings['item_id'].values) + num_users
-
-edge_index = torch.stack([
-    torch.cat([edge_user, edge_item]),
-    torch.cat([edge_item, edge_user])
-])
-
-print(f"Edge index shape: {edge_index.shape}")
-```
-</details>
+1. What is the cold start problem?
+2. How does it manifest for new users? New items?
+3. Why are many traditional methods bad at cold start?
+4. How might GNNs help (or not help)?
 
 ---
 
-## 🚀 Task 3: Build LightGCN Model
+# Phase 1: Recommendation Fundamentals (3+ hours)
 
-### Why LightGCN?
+## Task 1.1: Understand the Problem Formally
 
-<details>
-<summary>Answer</summary>
+### Formalization:
 
-LightGCN (He et al., 2020) found that for recommendations:
-- ❌ Non-linear activations HURT performance
-- ❌ Feature transformations HURT performance
-- ✅ Just light aggregation works BEST!
+1. Define the recommendation problem mathematically
+   - What is the input?
+   - What is the output?
+   - What is the goal?
 
-It's literally just averaging neighbor embeddings!
-</details>
+2. What is implicit feedback? How is it different from explicit ratings?
 
-### 🧩 Implement LightGCN:
-```python
-import torch.nn as nn
-from torch_geometric.utils import degree
+3. For MovieLens (your dataset), do you have implicit or explicit feedback?
 
-class LightGCN(nn.Module):
-    def __init__(self, num_users, num_items, embed_dim, num_layers=3):
-        super().__init__()
-        self.num_users = num_users
-        self.num_items = num_items
-        self.num_layers = num_layers
-        
-        # Only learnable parameters: embeddings!
-        self.user_embedding = nn.Embedding(num_users, embed_dim)
-        self.item_embedding = nn.Embedding(num_items, embed_dim)
-        
-        # Initialize
-        nn.init.normal_(self.user_embedding.weight, std=0.1)
-        nn.init.normal_(self.item_embedding.weight, std=0.1)
-    
-    def get_embeddings(self, edge_index):
-        """Light graph convolution - NO activation, NO transformation!"""
-        # Combine user and item embeddings
-        x = torch.cat([
-            self.user_embedding.weight,
-            self.item_embedding.weight
-        ])
-        
-        # Compute normalization (like GCN)
-        row, col = edge_index
-        deg = degree(col, x.size(0))
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
-        
-        # Light propagation
-        all_embeddings = [x]
-        for _ in range(self.num_layers):
-            # Message passing: just weighted sum!
-            x_new = ???  # Aggregate neighbor embeddings with normalization
-            all_embeddings.append(x_new)
-            x = x_new
-        
-        # Final embedding = average of all layers
-        final = torch.stack(all_embeddings).mean(dim=0)
-        
-        return final[:self.num_users], final[self.num_users:]
-```
-
-### 🤔 Design Questions:
-
-**Q1: Why average embeddings across ALL layers (not just the last)?**
-
-<details>
-<summary>Answer</summary>
-
-Different layers capture different information:
-- Layer 0: Original preferences
-- Layer 1: Direct neighbors' preferences
-- Layer 2: 2-hop preferences
-
-Averaging keeps ALL perspectives!
-</details>
-
-**Q2: Why NO activation functions?**
-
-<details>
-<summary>Answer</summary>
-
-Experiments show activations add noise for recommendation! The model just needs to learn "who's similar to whom" — non-linearity doesn't help and actually hurts.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-def get_embeddings(self, edge_index):
-    x = torch.cat([
-        self.user_embedding.weight,
-        self.item_embedding.weight
-    ])
-    
-    row, col = edge_index
-    deg = degree(col, x.size(0), dtype=x.dtype)
-    deg_inv_sqrt = deg.pow(-0.5)
-    deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-    norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
-    
-    all_embeddings = [x]
-    for _ in range(self.num_layers):
-        # Sparse message passing
-        x_new = torch.zeros_like(x)
-        x_new.scatter_add_(0, col.unsqueeze(1).expand_as(x[row]), 
-                          norm.unsqueeze(1) * x[row])
-        all_embeddings.append(x_new)
-        x = x_new
-    
-    final = torch.stack(all_embeddings).mean(dim=0)
-    return final[:self.num_users], final[self.num_users:]
-```
-</details>
+4. If you have ratings (1-5 stars), should you still treat it as implicit? Why?
 
 ---
 
-## 🚀 Task 4: BPR Loss (Bayesian Personalized Ranking)
+## Task 1.2: Evaluation in Recommendation
 
-### Why Not Cross-Entropy?
+This is subtle and important. Research thoroughly.
 
-<details>
-<summary>Answer</summary>
+### The Problem:
 
-We don't have explicit "negative" labels! A user not rating a movie means:
-1. They haven't seen it yet, OR
-2. They wouldn't like it
+In classification, you have labels. In recommendation:
+- You know what users DID interact with
+- You don't know what they WOULD interact with if shown
+- Absence of interaction ≠ dislike
 
-BPR solves this by saying: "Prefer rated items over unrated ones"
-</details>
+### Questions:
 
-### BPR Formula:
-```
-For each user u:
-  - pos_item = an item they DID rate
-  - neg_item = an item they did NOT rate
-  
-  Loss = -log(sigmoid(score(u, pos) - score(u, neg)))
-  
-  Goal: Make score(u, pos) > score(u, neg)
-```
+1. What is the difference between accuracy and ranking metrics?
+2. What is Recall@K? Intuitive explanation and formula.
+3. What is NDCG@K? What does the "discounted" and "cumulative" mean?
+4. What is Hit Rate? How does it differ from precision?
+5. What is Mean Reciprocal Rank (MRR)?
 
-### 🧩 Implement BPR Loss:
-```python
-def bpr_loss(user_emb, pos_item_emb, neg_item_emb):
-    """
-    Bayesian Personalized Ranking loss.
-    
-    Args:
-        user_emb: User embeddings [batch]
-        pos_item_emb: Positive item embeddings [batch]
-        neg_item_emb: Negative item embeddings [batch]
-    """
-    # Score = dot product
-    pos_scores = (user_emb * pos_item_emb).sum(dim=-1)
-    neg_scores = (user_emb * neg_item_emb).sum(dim=-1)
-    
-    # BPR: prefer positive over negative
-    loss = -torch.log(torch.sigmoid(??? - ???) + 1e-10).mean()
-    return loss
-```
+### Design Decision:
 
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-def bpr_loss(user_emb, pos_item_emb, neg_item_emb):
-    pos_scores = (user_emb * pos_item_emb).sum(dim=-1)
-    neg_scores = (user_emb * neg_item_emb).sum(dim=-1)
-    loss = -torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10).mean()
-    return loss
-```
-</details>
+Which metric is most appropriate for:
+- A video streaming service where users watch one thing at a time?
+- An e-commerce site where users browse many items?
+- A music service with continuous playback?
 
 ---
 
-## 🚀 Task 5: Training and Evaluation
+## Task 1.3: Training Objective
 
-### 🧩 Implement Metrics:
-```python
-@torch.no_grad()
-def evaluate(model, edge_index, test_users, test_items, k=10):
-    model.eval()
-    user_emb, item_emb = model.get_embeddings(edge_index)
-    
-    recalls = []
-    for user, true_items in test_data:  # Group by user
-        # Score all items for this user
-        scores = (user_emb[user] @ item_emb.t())
-        
-        # Remove training items (they're already known!)
-        scores[train_items[user]] = -float('inf')
-        
-        # Get top-K recommendations
-        _, top_k = scores.topk(k)
-        
-        # Recall@K: what fraction of true items are in top-K?
-        hits = len(set(top_k.tolist()) & set(true_items))
-        recall = hits / min(len(true_items), k)
-        recalls.append(recall)
-    
-    return sum(recalls) / len(recalls)
-```
+### The BPR Paper
 
-### 🎯 Expected Results:
-- Recall@10 > 0.10 is good
-- Recall@10 > 0.15 is excellent
+Read or skim: "BPR: Bayesian Personalized Ranking from Implicit Feedback"
+
+Answer:
+1. What does BPR optimize?
+2. What are positive pairs? Negative pairs?
+3. Why can't you use cross-entropy loss directly?
+4. What is the assumption about unobserved data?
+5. Write the BPR loss formula and explain each term.
 
 ---
 
-## 🚀 Bonus: Generate Recommendations!
+### ✅ Phase 1 Checkpoint
 
-### 🧩 Your Task:
-```python
-def recommend_for_user(model, user_id, already_watched, top_k=10):
-    """Generate recommendations for a specific user."""
-    model.eval()
-    user_emb, item_emb = model.get_embeddings(edge_index)
-    
-    # Score all items
-    scores = ???
-    
-    # Exclude already watched
-    for item in already_watched:
-        scores[item] = -float('inf')
-    
-    # Get top-K
-    top_k_scores, top_k_items = scores.topk(top_k)
-    
-    return list(zip(top_k_items.tolist(), top_k_scores.tolist()))
-
-# Try it!
-recs = recommend_for_user(model, user_id=0, already_watched=[...])
-print("Top 10 recommendations for User 0:")
-for movie_id, score in recs:
-    print(f"  Movie {movie_id}: score = {score:.3f}")
-```
+- [ ] Problem formalization written
+- [ ] 5 evaluation metrics explained with examples
+- [ ] BPR loss understood and derived
+- [ ] Cold start problem analyzed
 
 ---
 
-## ✅ Project Checklist
+# Phase 2: Data Preparation (3+ hours)
 
-- [ ] Understood user-item bipartite graphs
-- [ ] Created edge index from ratings
-- [ ] Built LightGCN model
-- [ ] Implemented BPR loss
-- [ ] Evaluated with Recall@K
-- [ ] Generated actual recommendations!
+## Task 2.1: MovieLens Exploration
+
+Use MovieLens 100K or 1M (choose and justify).
+
+### Basic Statistics:
+1. Number of users, items, ratings
+2. Rating distribution (histogram)
+3. Sparsity (what percentage of user-item pairs have ratings?)
+
+### User Analysis:
+1. Distribution of number of ratings per user
+2. Who are the most active users?
+3. Average, median, min, max ratings per user
+
+### Item Analysis:
+1. Distribution of number of ratings per movie
+2. What are the most rated movies?
+3. What are the least rated? (1 rating only?)
 
 ---
 
-## 🎓 What You Learned
+## Task 2.2: Build the Graph
 
-| Concept | Key Insight |
-|---------|-------------|
-| **Bipartite graph** | Users and items as separate node types |
-| **LightGCN** | No activations, no transformations — just aggregation |
-| **BPR loss** | Prefer rated over unrated items |
-| **Recall@K** | Measure recommendation quality |
-| **Collaborative filtering** | Learn from the graph structure |
+Transform ratings into a bipartite graph.
+
+### Design Decisions:
+
+1. Should you include all ratings, or only positive ones (e.g., ≥4)?
+2. How do you encode user IDs and item IDs into a single node space?
+3. Should edges be weighted by rating value?
+4. Should you add self-loops? Why or why not?
+
+### Implementation:
+
+Create `edge_index` for the user-item bipartite graph.
+Verify:
+1. Number of edges
+2. No duplicate edges
+3. Correct ID ranges
+
+---
+
+## Task 2.3: Train/Test Split
+
+This is tricky for recommendation.
+
+### Options:
+
+1. **Random split:** Random 80/20 of interactions
+2. **Leave-one-out:** Hold out last item per user
+3. **Temporal split:** All interactions before time T for train
+
+### Questions:
+
+1. What is data leakage in recommendation splits?
+2. If you randomly split, what information leaks?
+3. Why is temporal split more realistic but harder?
+
+**Choose a split strategy and justify (1 paragraph).**
+
+---
+
+### ✅ Phase 2 Checkpoint
+
+- [ ] Complete data statistics report
+- [ ] Bipartite graph constructed
+- [ ] Split strategy chosen with justification
+- [ ] No data leakage verified
+
+---
+
+# Phase 3: Architecture Design (3+ hours)
+
+## Task 3.1: LightGCN Deep Dive
+
+Read: "LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation"
+
+### Questions:
+
+1. What is LightGCN's key insight about simplification?
+2. What components of GCN does it remove? Why?
+3. How does it aggregate across layers?
+4. What is the normalization scheme?
+5. Write the LightGCN layer equation.
+
+### Comparison:
+
+Compare to NGCF (Neural Graph Collaborative Filtering):
+1. What does NGCF do that LightGCN doesn't?
+2. Why does LightGCN still work (or work better)?
+
+---
+
+## Task 3.2: Design Your Model
+
+### Questions to Answer:
+
+1. Number of layers (study the paper's recommendations)
+2. Embedding dimension
+3. How to predict score for a user-item pair?
+4. How to generate top-K recommendations?
+
+### Key Design:
+
+Draw the complete architecture:
+- User embeddings initialization
+- Item embeddings initialization
+- Message passing layers
+- How to get final embeddings
+- Scoring mechanism
+
+---
+
+## Task 3.3: Negative Sampling Strategy
+
+### Questions:
+
+1. For each positive (user, item) pair, how many negatives should you sample?
+2. Should you sample uniformly? Or popularity-weighted?
+3. What is "hard negative mining"?
+4. What problems occur if negatives are too easy?
+
+**Design your negative sampling strategy with justification.**
+
+---
+
+### ✅ Phase 3 Checkpoint
+
+- [ ] LightGCN paper summarized
+- [ ] Architecture diagram
+- [ ] Scoring mechanism defined
+- [ ] Negative sampling strategy designed
+
+---
+
+# Phase 4: Implementation (4+ hours)
+
+## Task 4.1: Implement LightGCN
+
+Build from scratch (no copying from tutorials):
+
+1. User and item embeddings
+2. Light convolution (no activation, no transformation)
+3. Layer aggregation
+4. Scoring function
+
+### Verify:
+
+1. Can you run a forward pass?
+2. Are embedding shapes correct?
+3. Is the graph structure correct?
+
+---
+
+## Task 4.2: Implement BPR Training
+
+1. Positive edge sampling
+2. Negative edge sampling
+3. BPR loss computation
+4. Training loop
+
+### Monitor:
+
+- Loss curve
+- Training time per epoch
+- Memory usage
+
+---
+
+## Task 4.3: Implement Evaluation
+
+This is complex. Implement carefully:
+
+For each test user:
+1. Get their embedding
+2. Score ALL items they haven't interacted with
+3. Exclude training items from ranking
+4. Get top-K items
+5. Compute metrics against actual test items
+
+### Implement:
+- Recall@K (K = 10, 20, 50)
+- NDCG@K (K = 10, 20)
+- Hit Rate@K
+
+### Efficiency:
+
+For 10K+ users, computing metrics for all items per user is slow. How can you speed this up?
+
+---
+
+### ✅ Phase 4 Checkpoint
+
+- [ ] LightGCN model runs
+- [ ] BPR training works with decreasing loss
+- [ ] All evaluation metrics implemented
+- [ ] Metrics computed on test set
+
+---
+
+# Phase 5: Experiments and Analysis (3+ hours)
+
+## Task 5.1: Hyperparameter Study
+
+Experiment with:
+
+1. Embedding dimension: 32, 64, 128, 256
+2. Number of layers: 1, 2, 3, 4
+3. Learning rate: 0.0001, 0.001, 0.01
+4. Regularization weight
+
+Create a table with best combination.
+
+---
+
+## Task 5.2: Baseline Comparison
+
+Implement or use existing implementations of:
+
+1. **PopularityBased:** Recommend most popular items
+2. **Matrix Factorization (MF):** Basic embedding dot product
+3. **NeuMF:** Neural collaborative filtering (if time permits)
+
+Compare to your LightGCN on all metrics.
+
+---
+
+## Task 5.3: Cold Start Analysis
+
+Analyze performance by user activity:
+
+1. Group users by number of training interactions
+2. Compute metrics for each group
+3. Does LightGCN help cold users more than MF?
+
+---
+
+## Task 5.4: Item-level Analysis
+
+1. Which items are recommended most often?
+2. Are popular items over-represented?
+3. What is the "coverage" of your recommendations?
+4. Is there a popularity bias issue?
+
+---
+
+### ✅ Phase 5 Checkpoint
+
+- [ ] Hyperparameter table
+- [ ] Baseline comparison table
+- [ ] Cold start analysis
+- [ ] Popularity bias analysis
+
+---
+
+# Phase 6: Production Considerations (2+ hours)
+
+## Task 6.1: Scalability
+
+1. How does training time scale with users/items?
+2. At what scale does your implementation fail?
+3. What would you change for 1M users?
+
+---
+
+## Task 6.2: Serving
+
+1. How would you generate recommendations in real-time?
+2. Can you pre-compute all recommendations? Space requirements?
+3. Approximate nearest neighbor? (FAISS, ScaNN)
+
+---
+
+## Task 6.3: Updating
+
+1. New user joins - how to generate recommendations?
+2. User watches something new - how to update?
+3. Full retraining vs. incremental update - tradeoffs?
+
+---
+
+# Phase 7: Final Report
+
+## Required Sections:
+
+1. **Introduction:** Recommendation systems and GNNs
+2. **Background:** LightGCN and related work
+3. **Dataset:** Complete MovieLens analysis
+4. **Methods:** Your implementation details
+5. **Experiments:** All comparisons and ablations
+6. **Analysis:** Cold start, popularity bias, etc.
+7. **Production Considerations:** Scalability discussion
+8. **Conclusion:** Key takeaways
+
+---
+
+## 🏆 Success Criteria
+
+- [ ] LightGCN implemented from scratch
+- [ ] BPR training working
+- [ ] Recall@20 > 0.20 on test set
+- [ ] Beats MF baseline by 10%+
+- [ ] Cold start analysis completed
+- [ ] All 100+ questions answered
+- [ ] Comprehensive final report
 
 ---
 
 ## 🎉 Congratulations!
 
-You've completed all 6 projects! You now have hands-on experience with:
+You've completed all 6 projects! You now have deep practical experience with:
 
-1. ✅ Node classification
-2. ✅ Link prediction
-3. ✅ Graph classification
-4. ✅ Molecular property prediction
-5. ✅ Large-scale social networks
-6. ✅ Recommendation systems
+- Node classification at scale
+- Link prediction
+- Graph classification
+- Molecular property prediction
+- Large-scale social networks
+- Production recommendation systems
 
-**Ready for the capstone?** [Capstone Project →](../Capstone-Molecular-Property-Prediction/)
+**Final Challenge:** [Capstone Project →](../Capstone-Molecular-Property-Prediction/)

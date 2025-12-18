@@ -1,397 +1,372 @@
-# 💊 Project 4: Molecular Property Prediction
+# 💊 Project 4: Molecular Property Prediction Challenge
 
 **Difficulty:** ⭐⭐⭐ Advanced  
-**Time:** 4-5 hours  
-**Goal:** Predict toxicity of drug molecules across multiple assays
+**Estimated Time:** 12-16 hours  
+**Prerequisites:** Complete Projects 1-3
 
 ---
 
-## 📖 Background
+## 🎯 Your Mission
 
-In drug discovery, predicting molecular properties is CRITICAL:
-- 🚫 Will this molecule be toxic?
-- 💧 Will it dissolve in water?
-- 🧠 Will it cross the blood-brain barrier?
+You're a machine learning researcher at a drug discovery company. The company screens thousands of molecules annually for multiple toxicity endpoints.
 
-**Your Mission:** Build a GNN that predicts **multiple toxicity properties** for drug-like molecules!
+**Your task:** Build a multi-task GNN that predicts **12 different toxicity properties** simultaneously for drug-like molecules.
 
----
-
-## 🧠 Key Challenge: Multi-Task Learning
-
-Unlike previous projects with ONE label, we predict **12 different properties** per molecule:
-
-```
-Molecule X:
-  - NR-AR:        Toxic? → 1
-  - NR-AhR:       Toxic? → 0
-  - NR-ER:        Toxic? → ?  (MISSING!)
-  - SR-MMP:       Toxic? → 1
-  ...12 total assays
-```
-
-**Challenge:** Some labels are MISSING (experiments not done).
+This is a real-world challenge with:
+- Multi-task learning
+- Severely missing labels
+- Imbalanced classes
+- Molecular domain knowledge
 
 ---
 
-## 🚀 Task 1: Load Tox21 Dataset
+## 🧠 Before You Begin: Deep Conceptual Understanding
 
-### About Tox21:
-| Property | Value |
-|----------|-------|
-| Molecules | 8,014 |
-| Toxicity assays | 12 |
-| Task type | Multi-label classification |
-| Missing labels | ~75%! |
+This project requires significant preparation. Spend at least 2-3 hours on this section before any coding.
 
-### 🧩 Your Task:
-```python
-from torch_geometric.datasets import MoleculeNet
+### Drug Discovery Context
 
-dataset = MoleculeNet(root='./data', name='Tox21')
+Research and write answers (5+ sentences each):
 
-print(f"Number of molecules: {???}")
-print(f"Number of tasks: {???}")
-print(f"Node features: {???}")
+1. What is the drug discovery pipeline? Where does computational screening fit?
+2. What is "toxicity" in the context of drug development?
+3. Why would a company want to predict toxicity before synthesis?
+4. What is the cost of a failed drug in clinical trials due to toxicity?
 
-# Check one molecule
-mol = dataset[0]
-print(f"\nFirst molecule:")
-print(f"  Atoms: {???}")
-print(f"  Bonds: {???}")
-print(f"  Labels: {mol.y}")  # Notice the shape!
-```
+### Multi-Task Learning
 
-### 🤔 Think About It:
+Research and answer:
 
-**Q: Why do molecular graphs have EDGE features (unlike social networks)?**
+1. What is multi-task learning? How does it differ from training separate models?
+2. What might be the advantages of predicting multiple properties jointly?
+3. What might be the disadvantages?
+4. How do tasks "help" each other in multi-task learning?
+5. When might multi-task learning hurt compared to single-task?
 
-<details>
-<summary>Answer</summary>
+### The Missing Labels Problem
 
-In molecules:
-- Nodes = atoms (with properties like element type)
-- Edges = chemical bonds (with properties like bond type: single, double, aromatic)
+This is crucial for Tox21:
 
-Bond types MATTER for chemistry! A single bond vs double bond changes the molecule entirely.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-from torch_geometric.datasets import MoleculeNet
-
-dataset = MoleculeNet(root='./data', name='Tox21')
-
-print(f"Number of molecules: {len(dataset)}")
-print(f"Number of tasks: {dataset[0].y.shape[1]}")
-print(f"Node features: {dataset.num_node_features}")
-
-mol = dataset[0]
-print(f"\nFirst molecule:")
-print(f"  Atoms: {mol.num_nodes}")
-print(f"  Bonds: {mol.num_edges}")
-print(f"  Labels: {mol.y}")
-```
-</details>
+1. In Tox21, approximately 75% of labels are missing. What does this mean?
+2. Why are labels missing? (Think about how the data was collected)
+3. Can you impute (fill in) missing labels? Why or why not?
+4. How should you handle missing labels in your loss function?
+5. How do you evaluate when labels are missing?
 
 ---
 
-## 🚀 Task 2: Handle Missing Labels
+# Phase 1: Domain Understanding (3+ hours)
 
-### The Challenge:
-Many labels are `NaN` (experiment not done). You can't compute loss on missing values!
+## Task 1.1: Understanding Molecular Representations
 
-### 🧩 Implement Masked Loss:
-```python
-import torch
-import torch.nn.functional as F
+Unlike previous projects, you need domain knowledge.
 
-def masked_bce_loss(predictions, targets):
-    """
-    Binary cross-entropy that IGNORES NaN labels.
-    
-    Args:
-        predictions: Model output [batch, 12]
-        targets: True labels with NaN [batch, 12]
-    
-    Returns:
-        Loss (only on valid labels)
-    """
-    # Create mask: True where label is NOT NaN
-    mask = ???
-    
-    # If no valid labels, return 0
-    if mask.sum() == 0:
-        return torch.tensor(0.0)
-    
-    # Compute loss only on valid entries
-    loss = F.binary_cross_entropy_with_logits(
-        predictions[mask],
-        targets[mask]
-    )
-    return loss
-```
+### Questions to Answer:
 
-### 🤔 Design Question:
+1. What is SMILES notation? Convert these to molecular graphs (by hand):
+   - "CCO" (ethanol)
+   - "c1ccccc1" (benzene)
+   
+2. In molecular graphs:
+   - What properties of atoms become node features?
+   - What properties of bonds become edge features?
+   - Why is 3D structure often NOT captured?
 
-**Q: Why use `binary_cross_entropy` instead of `cross_entropy`?**
+3. What is the difference between:
+   - Constitutional descriptors
+   - Topological descriptors
+   - Fingerprints
+   - Graph neural network embeddings
 
-<details>
-<summary>Answer</summary>
-
-This is **multi-label**, not multi-class!
-
-- Multi-class: One label from N choices (use cross_entropy)
-- Multi-label: Multiple independent yes/no labels (use BCE for each)
-
-A molecule can be toxic in MULTIPLE assays simultaneously.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-def masked_bce_loss(predictions, targets):
-    mask = ~torch.isnan(targets)
-    
-    if mask.sum() == 0:
-        return torch.tensor(0.0, device=predictions.device)
-    
-    loss = F.binary_cross_entropy_with_logits(
-        predictions[mask],
-        targets[mask]
-    )
-    return loss
-```
-</details>
+4. What is the "scaffold" of a molecule? Why does it matter for ML?
 
 ---
 
-## 🚀 Task 3: Build Molecular GNN
+## Task 1.2: The Tox21 Dataset Deep Dive
 
-### Architecture Overview:
-```
-Atoms → [GIN Layers] → Atom Embeddings → [Pool] → Molecule Embedding → [MLP] → 12 Predictions
-```
+### Background Research:
 
-### Why GIN for Molecules?
+1. What organization created Tox21? Why?
+2. What are the 12 toxicity endpoints? (List them all)
+3. What laboratory assays were used? (General understanding)
+4. How were molecules selected for the dataset?
 
-<details>
-<summary>Answer</summary>
+### Data Analysis (You may now write code to explore):
 
-GIN (Graph Isomorphism Network) is the most **expressive** standard GNN. For molecules, we need to distinguish subtle structural differences. GIN's sum aggregation preserves this information better than mean.
-</details>
+1. How many molecules in total?
+2. For each of the 12 endpoints:
+   - How many positive labels?
+   - How many negative labels?
+   - How many missing labels?
+   - Create a visualization
 
-### 🧩 Fill in the Blanks:
-```python
-from torch_geometric.nn import GINConv, global_add_pool
-import torch.nn as nn
+3. What is the average number of labels per molecule?
+4. Are some molecules labeled for all 12 endpoints? How many?
+5. Are some molecules labeled for only 1 endpoint? How many?
 
-class MoleculeGNN(nn.Module):
-    def __init__(self, num_features, hidden_dim, num_tasks):
-        super().__init__()
-        
-        # GIN layers (need MLPs inside!)
-        self.convs = nn.ModuleList()
-        
-        # First layer
-        mlp1 = nn.Sequential(
-            nn.Linear(num_features, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim)
-        )
-        self.convs.append(GINConv(mlp1))
-        
-        # More layers (you add 2-3 more!)
-        ???
-        
-        # Classifier: molecule embedding → 12 predictions
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(hidden_dim, num_tasks)
-        )
-    
-    def forward(self, x, edge_index, batch):
-        # Apply GIN layers
-        for conv in self.convs:
-            x = conv(x, edge_index)
-            x = F.relu(x)
-        
-        # Pool atoms → molecule
-        x = ???(x, batch)  # Which pooling for molecules?
-        
-        # Predict
-        return self.classifier(x)
-```
+### Molecular Statistics:
 
-### 🤔 Design Question:
-
-**Q: Why `global_add_pool` instead of `global_mean_pool` for molecules?**
-
-<details>
-<summary>Answer</summary>
-
-Molecule size matters! Larger molecules have more atoms = more opportunities for toxicity. Using SUM keeps this size information. MEAN would normalize it away.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-class MoleculeGNN(nn.Module):
-    def __init__(self, num_features, hidden_dim, num_tasks):
-        super().__init__()
-        
-        self.convs = nn.ModuleList()
-        
-        # Layer 1
-        mlp1 = nn.Sequential(nn.Linear(num_features, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, hidden_dim))
-        self.convs.append(GINConv(mlp1))
-        
-        # Layers 2-4
-        for _ in range(3):
-            mlp = nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, hidden_dim))
-            self.convs.append(GINConv(mlp))
-        
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(hidden_dim, num_tasks)
-        )
-    
-    def forward(self, x, edge_index, batch):
-        for conv in self.convs:
-            x = conv(x, edge_index)
-            x = F.relu(x)
-        
-        x = global_add_pool(x, batch)
-        return self.classifier(x)
-```
-</details>
+1. Distribution of molecule sizes (number of atoms)
+2. Distribution of molecule "complexity" (number of rings, etc.)
+3. Distribution of atom types
+4. Distribution of bond types
 
 ---
 
-## 🚀 Task 4: Train and Evaluate with ROC-AUC
+## Task 1.3: The Imbalance Challenge
 
-### Why AUC for Toxicity?
+Toxicity data is highly imbalanced. Understand this deeply.
 
-<details>
-<summary>Answer</summary>
+### Questions:
 
-Toxicity data is **imbalanced** — most molecules are NOT toxic. Accuracy would be misleading (predict "safe" always = high accuracy!). AUC measures ranking quality regardless of threshold.
-</details>
+1. For the most imbalanced endpoint, what is the positive/negative ratio?
+2. If a model predicts "non-toxic" for everything, what accuracy does it get?
+3. Why is accuracy a misleading metric here?
+4. What metrics are better for imbalanced classification?
+5. What is AUC-ROC? What does it measure intuitively?
+6. What is AUC-PRC? When is it preferred over ROC?
 
-### 🧩 Implement Evaluation:
-```python
-from sklearn.metrics import roc_auc_score
-import numpy as np
+---
 
-@torch.no_grad()
-def evaluate(model, loader):
-    model.eval()
-    all_preds = []
-    all_labels = []
-    
-    for batch in loader:
-        out = model(batch.x, batch.edge_index, batch.batch)
-        preds = torch.sigmoid(out)  # Convert to probabilities
-        
-        all_preds.append(preds.cpu())
-        all_labels.append(batch.y.cpu())
-    
-    preds = torch.cat(all_preds).numpy()
-    labels = torch.cat(all_labels).numpy()
-    
-    # Compute AUC per task, ignoring NaN
-    aucs = []
-    for i in range(labels.shape[1]):
-        mask = ~np.isnan(labels[:, i])
-        if mask.sum() > 10:  # Need enough samples
-            auc = roc_auc_score(???, ???)
-            aucs.append(auc)
-    
-    return np.mean(aucs)
+### ✅ Phase 1 Checkpoint
+
+- [ ] Written answers to all 25+ questions above
+- [ ] Visualization of label distribution across 12 endpoints
+- [ ] Molecular statistics histograms
+- [ ] Understanding of evaluation challenges
+
+---
+
+# Phase 2: Architecture Design Decisions (2+ hours)
+
+## Task 2.1: Encoder Selection
+
+### Analysis Question:
+
+For molecular property prediction, compare these architectures:
+
+1. **GCN:** Pros/cons for molecules?
+2. **GIN:** Why is it popular for molecules?
+3. **MPNN (Message Passing Neural Network):** How does it incorporate edge features?
+4. **AttentiveFP:** What does attention add for molecules?
+
+**Write a comparison table and select one with justification (1 paragraph).**
+
+---
+
+## Task 2.2: Multi-Task Head Design
+
+You need to predict 12 properties. Design options:
+
+### Option A: Shared trunk, separate heads
+```
+Molecules → GNN → Shared embedding → 12 separate MLPs → 12 predictions
 ```
 
-### 🎯 Expected Results:
-- Mean AUC > 0.75 is good
-- Mean AUC > 0.80 is excellent
-- State-of-the-art: ~0.85
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-@torch.no_grad()
-def evaluate(model, loader):
-    model.eval()
-    all_preds = []
-    all_labels = []
-    
-    for batch in loader:
-        out = model(batch.x, batch.edge_index, batch.batch)
-        preds = torch.sigmoid(out)
-        all_preds.append(preds.cpu())
-        all_labels.append(batch.y.cpu())
-    
-    preds = torch.cat(all_preds).numpy()
-    labels = torch.cat(all_labels).numpy()
-    
-    aucs = []
-    for i in range(labels.shape[1]):
-        mask = ~np.isnan(labels[:, i])
-        if mask.sum() > 10:
-            try:
-                auc = roc_auc_score(labels[mask, i], preds[mask, i])
-                aucs.append(auc)
-            except:
-                pass
-    
-    return np.mean(aucs) if aucs else 0.0
+### Option B: Fully shared
 ```
-</details>
+Molecules → GNN → Shared embedding → Single MLP → 12 predictions
+```
+
+### Option C: Mixed sharing
+```
+Molecules → GNN → Shared embedding → Grouped MLPs (endpoints that share biology) → predictions
+```
+
+### Questions:
+
+1. What are the tradeoffs of each design?
+2. Which has more parameters? Fewer?
+3. Which allows tasks to help each other most?
+4. What is "negative transfer" and how might it manifest here?
+
+**Design your approach and justify it.**
 
 ---
 
-## 🚀 Bonus Challenges
+## Task 2.3: Loss Function Design
 
-### Challenge 1: Use Edge Features
-Molecules have bond types! Try incorporating `edge_attr`.
+With missing labels, you can't use standard cross-entropy.
 
-### Challenge 2: Per-Task Analysis
-Which toxicity assays are hardest to predict? Why might that be?
+### Questions:
 
-### Challenge 3: Virtual Node
-Add a "super node" connected to all atoms — often helps molecular GNNs!
-
----
-
-## ✅ Project Checklist
-
-- [ ] Loaded and explored Tox21 dataset
-- [ ] Implemented masked loss for missing labels
-- [ ] Built GIN-based molecular GNN
-- [ ] Evaluated with ROC-AUC per task
-- [ ] Achieved mean AUC > 0.75
-- [ ] (Bonus) Analyzed per-task performance
+1. Write pseudocode for computing loss that ignores missing labels.
+2. Should you weight tasks equally? Why or why not?
+3. What is "uncertainty weighting" in multi-task learning?
+4. What is "focal loss" and might it help here?
 
 ---
 
-## 🎓 What You Learned
+### ✅ Phase 2 Checkpoint
 
-| Concept | Key Insight |
-|---------|-------------|
-| **Multi-task** | Predict multiple properties at once |
-| **Missing labels** | Mask NaN in loss computation |
-| **GIN** | Most expressive for molecular graphs |
-| **global_add_pool** | Preserves molecule size information |
-| **ROC-AUC** | Better than accuracy for imbalanced data |
+- [ ] Architecture comparison table
+- [ ] Multi-task head design with justification
+- [ ] Loss function pseudocode
+- [ ] Handling of missing labels explained
 
 ---
 
-**Next Challenge:** [Project 5: Social Network Analysis →](../P5-Social-Network-Analysis/)
+# Phase 3: Implementation (4+ hours)
+
+## Task 3.1: Data Pipeline
+
+Build a robust data pipeline:
+
+1. Load Tox21 dataset
+2. Create appropriate train/val/test splits
+3. Handle missing labels properly
+4. Set up DataLoader
+
+### Critical Question:
+
+How do you split molecules? Randomly? By scaffold?
+
+Research:
+- What is "scaffold split"?
+- Why might it give more realistic performance estimates?
+- What is data leakage and how does scaffold split prevent it?
+
+---
+
+## Task 3.2: Model Implementation
+
+Implement your designed architecture with:
+
+1. Molecular encoder (GNN layers)
+2. Global pooling
+3. Multi-task prediction heads
+4. Proper handling of missing labels in forward pass
+
+### Verification:
+
+- Does your model run without errors?
+- Are shapes correct at each layer?
+- Is the loss computation correct for missing labels?
+
+---
+
+## Task 3.3: Training with Care
+
+This is harder than previous projects. Consider:
+
+1. Learning rate scheduling
+2. Early stopping for each task?
+3. Gradient clipping
+4. How to monitor multiple tasks during training
+
+### Questions:
+
+1. How do you decide when to stop training with 12 tasks?
+2. If some tasks overfit before others, what do you do?
+3. How do you balance gradients from different tasks?
+
+---
+
+## Task 3.4: Per-Task Evaluation
+
+Evaluate each of the 12 endpoints separately:
+
+1. Compute AUC-ROC for each
+2. Compute AUC-PRC for each
+3. Identify which endpoints are easy/hard
+4. Compute mean AUC across tasks
+
+---
+
+### ✅ Phase 3 Checkpoint
+
+- [ ] Complete data pipeline with scaffold split
+- [ ] Working multi-task model
+- [ ] Training loop with proper monitoring
+- [ ] Per-task evaluation table
+
+---
+
+# Phase 4: Advanced Analysis (3+ hours)
+
+## Task 4.1: Baseline Comparisons
+
+Implement and compare against:
+
+1. **Random Forest** on molecular fingerprints
+2. **Single-task models** (12 separate GNNs)
+3. **Simple MLP** on fingerprints
+
+### Analysis:
+
+1. Does your GNN beat fingerprints? By how much?
+2. Does multi-task learning help compared to single-task?
+3. For which endpoints is the difference largest?
+
+---
+
+## Task 4.2: Error Analysis
+
+For the hardest endpoint:
+
+1. Examine 20 false positives (predicted toxic, actually not)
+2. Examine 20 false negatives (predicted safe, actually toxic)
+3. What molecular features correlate with errors?
+4. Are certain molecular scaffolds problematic?
+
+---
+
+## Task 4.3: Task Relationship Analysis
+
+Investigate task correlations:
+
+1. Compute pairwise correlation of task labels
+2. Which tasks are most correlated?
+3. Do correlated tasks have similar model performance?
+4. Could you use task relationships to improve predictions?
+
+---
+
+## Task 4.4: Interpretability
+
+For 3 molecules, try to understand the predictions:
+
+1. Visualize attention weights (if using attention)
+2. What atoms contribute most to toxicity prediction?
+3. Does this make chemical sense? (Research toxic functional groups)
+
+---
+
+### ✅ Phase 4 Checkpoint
+
+- [ ] Baseline comparison table
+- [ ] Error analysis document with 40 examples
+- [ ] Task correlation matrix
+- [ ] Interpretability analysis for 3 molecules
+
+---
+
+# Phase 5: Final Report (2+ hours)
+
+## Required Sections
+
+1. **Abstract:** One paragraph summary
+2. **Introduction:** Drug discovery, toxicity prediction, multi-task learning
+3. **Related Work:** At least 5 papers you read
+4. **Dataset:** Complete Tox21 analysis
+5. **Methods:** Architecture, training, evaluation
+6. **Experiments:** All comparisons and ablations
+7. **Results:** Best performance with confidence intervals
+8. **Discussion:** What worked, what didn't, why
+9. **Conclusion:** Key takeaways
+10. **References:** All papers cited
+
+---
+
+## 🏆 Success Criteria
+
+- [ ] Mean AUC-ROC > 0.75 on test set
+- [ ] Multi-task beats single-task (or you explain why not)
+- [ ] Complete error analysis
+- [ ] Beats fingerprint baseline on at least 8/12 tasks
+- [ ] Comprehensive report (10+ pages)
+- [ ] All 50+ questions answered throughout
+
+---
+
+**Next Project:** [Social Network Analysis Challenge →](../P5-Social-Network-Analysis/)

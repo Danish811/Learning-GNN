@@ -1,441 +1,384 @@
-# 🔗 Project 2: Link Prediction
+# 🔗 Project 2: Link Prediction Challenge
 
 **Difficulty:** ⭐⭐ Intermediate  
-**Time:** 3-4 hours  
-**Goal:** Predict which papers will cite each other in the future
+**Estimated Time:** 8-12 hours  
+**Prerequisites:** Complete Project 1 + Module 2
 
 ---
 
-## 📖 Background
+## 🎯 Your Mission
 
-**Link prediction** answers: "Will these two nodes connect?"
+You're working at a research organization that tracks scientific collaborations. They have a network of researchers connected by co-authorship. 
 
-Real-world uses:
-- 👥 Friend recommendations (Facebook)
-- 🛒 Product recommendations (Amazon)
-- 📚 Citation prediction (Academia)
-- 💊 Drug-protein interaction (Pharma)
+**Your task:** Build a system that predicts **which researchers will collaborate in the future** based on the existing collaboration network.
 
-**Your Mission:** Build a GNN that learns node embeddings, then predict whether two nodes should be connected!
+This is a **link prediction** problem: given a graph, predict missing or future edges.
 
 ---
 
-## 🧠 The Key Insight
+## 🧠 Before You Begin: Conceptual Understanding
 
-Link prediction is different from node classification:
+**Do NOT write any code until you've thought through these questions:**
 
-```
-Node Classification: Node → Label
-Link Prediction:     (Node A, Node B) → Connected? Yes/No
-```
+### Fundamental Questions
 
-**The approach:**
-1. Learn good node embeddings with a GNN
-2. For any pair (A, B), combine their embeddings
-3. Predict: Are they connected?
+1. What makes link prediction different from node classification?
+2. In node classification, each node has a label. In link prediction, what has a label?
+3. If you have N nodes, how many possible edges are there? (Undirected graph)
+4. If only 1% of possible edges exist, what challenge does this create?
 
----
+### Research Questions
 
-## 🚀 Task 1: Understand the Data Split
+Before implementing, research and write short answers (2-3 sentences each):
 
-### The Challenge:
-In link prediction, we need to hide some edges during training!
+1. What is an "encoder-decoder" architecture for link prediction?
+2. What is "negative sampling" and why is it necessary?
+3. What evaluation metrics are used for link prediction? Why not just accuracy?
+4. What is the difference between "transductive" and "inductive" link prediction?
 
-```
-Original Graph:        Training Graph:        Test:
-A ─── B                A ─── B               Does C──D exist?
-│     │                │     │               Does A──C exist?
-C ─── D                C     D               
-                       (edge hidden!)
-```
-
-### What to Do:
-1. Load the Cora dataset
-2. Use `RandomLinkSplit` to create train/val/test edge splits
-3. Print how many edges are in each split
-
-### 🧩 Starter Code:
-```python
-from torch_geometric.datasets import Planetoid
-from torch_geometric.transforms import RandomLinkSplit
-
-dataset = Planetoid(root='./data', name='Cora')
-data = dataset[0]
-
-# Split edges into train/val/test
-transform = RandomLinkSplit(
-    num_val=???,      # Fraction for validation
-    num_test=???,     # Fraction for test
-    is_undirected=True,
-    add_negative_train_samples=???  # Do we need fake "non-edges"?
-)
-
-train_data, val_data, test_data = transform(data)
-
-print(f"Training edges: {???}")
-print(f"Test edges: {???}")
-```
-
-### 🤔 Think About It:
-
-**Q1: Why do we need "negative samples" (non-edges)?**
-
-<details>
-<summary>Answer</summary>
-
-We're training a classifier! We need examples of:
-- ✅ **Positive**: Real edges (connected nodes)
-- ❌ **Negative**: Non-edges (unconnected nodes)
-
-Otherwise the model would just predict "connected" for everything!
-</details>
-
-**Q2: Why must test edges be HIDDEN during training?**
-
-<details>
-<summary>Answer</summary>
-
-If the model sees test edges during message passing, it's **cheating**! The model could learn to just memorize the graph structure instead of learning generalizable patterns.
-</details>
-
-<details>
-<summary>💡 Hint</summary>
-
-```python
-transform = RandomLinkSplit(
-    num_val=0.1,
-    num_test=0.1,
-    is_undirected=True,
-    add_negative_train_samples=True
-)
-```
-
-Each split has:
-- `edge_index` — edges for message passing
-- `edge_label_index` — edges to predict
-- `edge_label` — 1 (positive) or 0 (negative)
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-from torch_geometric.datasets import Planetoid
-from torch_geometric.transforms import RandomLinkSplit
-
-dataset = Planetoid(root='./data', name='Cora')
-data = dataset[0]
-
-transform = RandomLinkSplit(
-    num_val=0.1,
-    num_test=0.1,
-    is_undirected=True,
-    add_negative_train_samples=True
-)
-
-train_data, val_data, test_data = transform(data)
-
-print(f"Training edges for message passing: {train_data.edge_index.shape}")
-print(f"Training edges to predict: {train_data.edge_label_index.shape}")
-print(f"Test edges to predict: {test_data.edge_label_index.shape}")
-```
-</details>
+**Write down your answers before proceeding.**
 
 ---
 
-## 🚀 Task 2: Build the Encoder (GNN)
+# Phase 1: Problem Setup and Data Preparation (3+ hours)
 
-### What to Do:
-Create a GNN that produces node embeddings. This is the "encoder" part.
+## Task 1.1: Understanding the Data Challenge
 
-### 🧩 Fill in the Blanks:
-```python
-from torch_geometric.nn import GCNConv
-import torch.nn.functional as F
+For link prediction, we face a unique challenge: we need to **hide some edges** during training so we can test on them.
 
-class GNNEncoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super().__init__()
-        self.conv1 = ???
-        self.conv2 = ???
-    
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
-        x = ???  # Activation
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv2(x, edge_index)
-        return x  # These are our node embeddings!
-```
+### Think Through This:
 
-### 🤔 Design Question:
+1. If we train on ALL edges and test on those same edges, what would happen?
+2. Why is this different from node classification, where we don't need to hide nodes?
+3. Draw a diagram showing:
+   - Original graph
+   - Training graph (some edges removed)
+   - Test edges (the removed ones)
 
-**Why don't we apply softmax at the end (like in node classification)?**
+### Questions to Answer:
 
-<details>
-<summary>Answer</summary>
-
-In node classification, we output class probabilities.
-
-In link prediction, we output **embeddings** — continuous vectors that capture node properties. We'll use these embeddings to THEN predict edges.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-class GNNEncoder(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super().__init__()
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, out_channels)
-    
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv2(x, edge_index)
-        return x
-```
-</details>
+1. What percentage of edges should you hide for testing? Why?
+2. Should we also have a validation set of edges? Why?
+3. When doing message passing, should you use the full graph or the training graph? **Think carefully!**
 
 ---
 
-## 🚀 Task 3: Build the Decoder (Link Predictor)
+## Task 1.2: The Negative Sampling Problem
 
-### The Challenge:
-Given embeddings for nodes A and B, predict if they're connected.
+This is crucial and tricky. Work through it carefully.
 
-### Common Approaches:
+### The Problem:
 
-| Method | Formula | Pros/Cons |
-|--------|---------|-----------|
-| Dot product | z_A · z_B | Simple, fast |
-| Concatenate + MLP | MLP([z_A; z_B]) | Learnable, expressive |
-| Hadamard + MLP | MLP(z_A ⊙ z_B) | Good balance |
+```
+Your graph has 1000 nodes and 5000 edges.
+Possible edges: 1000 × 999 / 2 = 499,500
+Existing edges: 5000
+Non-edges: 494,500
 
-### 🧩 Your Task:
-Implement a simple dot-product decoder:
-
-```python
-def decode(z, edge_index):
-    """
-    Predict link probability for given edges.
-    
-    Args:
-        z: Node embeddings [num_nodes, embed_dim]
-        edge_index: Edges to predict [2, num_edges]
-    
-    Returns:
-        Link probabilities [num_edges]
-    """
-    src = edge_index[0]  # Source nodes
-    dst = edge_index[1]  # Destination nodes
-    
-    # Get embeddings for source and destination
-    z_src = ???
-    z_dst = ???
-    
-    # Dot product (element-wise multiply, then sum)
-    return ???
+If we only predict "connected" for everything, we'd be wrong 5000/5000 = never!
+Wait... that seems wrong. What's the actual issue?
 ```
 
-### 🤔 Think About It:
+### Questions to Answer:
 
-**Q: Why does dot product make sense for link prediction?**
+1. If you train only on positive edges (real connections), what will your model learn?
+2. Where do "negative samples" come from?
+3. What is the ratio of negative to positive samples you should use? Why?
+4. Is every non-edge a valid negative sample? What could go wrong?
 
-<details>
-<summary>Answer</summary>
+### Design Task:
 
-Dot product measures **similarity**. If two nodes have similar embeddings (pointing same direction), their dot product is HIGH. 
-
-The assumption: Similar nodes should connect!
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-def decode(z, edge_index):
-    src = edge_index[0]
-    dst = edge_index[1]
-    
-    z_src = z[src]
-    z_dst = z[dst]
-    
-    # Dot product per edge
-    return (z_src * z_dst).sum(dim=-1)
-```
-</details>
+Write pseudocode (not real code) for a function that:
+- Takes a graph and desired number of negative samples
+- Returns fake edges that DON'T exist in the graph
+- Is efficient (think about how you'd do this for a large graph)
 
 ---
 
-## 🚀 Task 4: Training Loop
+## Task 1.3: Edge Splitting Strategy
 
-### What to Do:
-1. Encode nodes to get embeddings
-2. Decode edge pairs to get predictions
-3. Use binary cross-entropy loss
-4. Train!
+Now design your data split.
 
-### 🧩 Fill in the Blanks:
-```python
-encoder = GNNEncoder(dataset.num_features, 128, 64)
-optimizer = torch.optim.Adam(encoder.parameters(), lr=0.01)
+### Questions to Answer:
 
-def train_epoch():
-    encoder.train()
-    optimizer.zero_grad()
-    
-    # 1. Get embeddings using TRAINING graph
-    z = encoder(train_data.x, ???)
-    
-    # 2. Decode: predict edges
-    pred = decode(z, ???)
-    
-    # 3. Ground truth labels
-    labels = ???
-    
-    # 4. Binary cross-entropy loss
-    loss = F.binary_cross_entropy_with_logits(pred, labels.float())
-    
-    loss.backward()
-    optimizer.step()
-    
-    return loss.item()
-```
+1. Should you split edges randomly, or does order matter?
+2. If you remove too many edges, what happens to your graph? (Think: connectivity)
+3. If you remove edges from node A to train on, can you still use node A for message passing?
+4. What is "message leakage" in link prediction? How do you avoid it?
 
-### 🤔 Key Question:
+### Task:
 
-**Q: Why use `edge_index` for encoding but `edge_label_index` for decoding?**
+Research `torch_geometric.transforms.RandomLinkSplit` and understand:
+- What parameters does it take?
+- What outputs does it produce?
+- What does `add_negative_train_samples` do?
 
-<details>
-<summary>Answer</summary>
-
-- `edge_index`: The edges used for **message passing** (training graph)
-- `edge_label_index`: The edges we're trying to **predict** (includes hidden test edges)
-
-We propagate messages on known edges, but predict on potentially new edges!
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-def train_epoch():
-    encoder.train()
-    optimizer.zero_grad()
-    
-    z = encoder(train_data.x, train_data.edge_index)
-    pred = decode(z, train_data.edge_label_index)
-    labels = train_data.edge_label
-    
-    loss = F.binary_cross_entropy_with_logits(pred, labels.float())
-    
-    loss.backward()
-    optimizer.step()
-    
-    return loss.item()
-
-# Train for 100 epochs
-for epoch in range(100):
-    loss = train_epoch()
-    if epoch % 20 == 0:
-        print(f"Epoch {epoch}: Loss = {loss:.4f}")
-```
-</details>
+**Do not use it yet** — just understand what it does and why.
 
 ---
 
-## 🚀 Task 5: Evaluate with AUC
+### ✅ Phase 1 Checkpoint
 
-### What to Do:
-Compute Area Under ROC Curve (AUC) on test edges.
-
-### 🧩 Your Implementation:
-```python
-from sklearn.metrics import roc_auc_score
-
-@torch.no_grad()
-def evaluate(data):
-    encoder.eval()
-    
-    z = encoder(data.x, data.edge_index)
-    pred = decode(z, data.edge_label_index)
-    pred = ???  # Convert logits to probabilities (hint: sigmoid)
-    
-    labels = data.edge_label
-    
-    auc = roc_auc_score(???, ???)  # (true labels, predictions)
-    return auc
-
-test_auc = evaluate(test_data)
-print(f"Test AUC: {test_auc:.4f}")
-```
-
-### 🎯 Expected Results:
-- AUC > 0.85 is good
-- AUC > 0.90 is excellent
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-@torch.no_grad()
-def evaluate(data):
-    encoder.eval()
-    
-    z = encoder(data.x, data.edge_index)
-    pred = decode(z, data.edge_label_index)
-    pred = torch.sigmoid(pred)
-    
-    labels = data.edge_label.cpu()
-    pred = pred.cpu()
-    
-    auc = roc_auc_score(labels, pred)
-    return auc
-
-test_auc = evaluate(test_data)
-print(f"Test AUC: {test_auc:.4f}")
-```
-</details>
+Before moving on:
+- [ ] Written answers to all 15+ questions above
+- [ ] Hand-drawn diagram of train/test edge splitting
+- [ ] Pseudocode for negative sampling
+- [ ] Understanding of RandomLinkSplit (without using it yet)
 
 ---
 
-## 🚀 Bonus Challenge: Beat the Baseline!
+# Phase 2: Designing the Architecture (2+ hours)
 
-### Ideas to Try:
-1. **Better encoder**: Use GAT instead of GCN
-2. **Better decoder**: MLP instead of dot product
-3. **More embeddings dimensions**: Try 128 or 256
-4. **Different negative sampling ratio**
+## Task 2.1: Encoder Design
 
-### 🤔 Think:
-- Which improvement has the biggest impact?
-- What's the tradeoff of a more complex decoder?
+The "encoder" produces node embeddings. But for link prediction, we need some different considerations.
 
----
+### Design Questions:
 
-## ✅ Project Checklist
+1. What should the output dimension of your encoder be? (This is not obvious!)
+2. Should you use the same GCN architecture from Project 1? What might need to change?
+3. Do you need a `forward` method that returns class probabilities? Or something else?
 
-- [ ] Understood train/test edge splits
-- [ ] Built GNN encoder for embeddings
-- [ ] Implemented dot-product decoder
-- [ ] Trained with proper loss function
-- [ ] Evaluated with AUC metric
-- [ ] (Bonus) Tried improvements
+### Task:
+
+Draw a diagram of your encoder architecture showing:
+- Input shape
+- Each layer and its output shape
+- Final output shape
+- What each output represents
 
 ---
 
-## 🎓 What You Learned
+## Task 2.2: Decoder Design
 
-| Concept | Key Insight |
-|---------|-------------|
-| **Link prediction** | Predicting connections, not labels |
-| **Encoder-decoder** | GNN encodes, decoder predicts |
-| **Negative sampling** | Need non-edges for training |
-| **Edge splits** | Hide test edges during training |
-| **AUC metric** | Better than accuracy for imbalanced data |
+The "decoder" takes two node embeddings and predicts if they should connect.
+
+### Research Task:
+
+Investigate and compare these decoder approaches:
+1. **Dot product:** Simply `z_u · z_v`
+2. **Hadamard product + MLP:** `MLP(z_u ⊙ z_v)`
+3. **Concatenation + MLP:** `MLP([z_u; z_v])`
+4. **Distance-based:** `1 / (1 + ||z_u - z_v||)`
+
+### Questions to Answer:
+
+1. What are the pros and cons of each approach?
+2. Which is fastest at inference time if you have 100,000 nodes?
+3. Which can capture the most complex patterns?
+4. What is the bias of dot product? (Hint: what does it assume about similarity?)
+5. Why might simple methods outperform complex ones?
+
+### Design Decision:
+
+Choose one decoder approach and **justify your choice in writing**. Your justification should be at least 3-4 sentences.
 
 ---
 
-**Next Challenge:** [Project 3: Graph Classification →](../P3-Graph-Classification/)
+## Task 2.3: Loss Function Selection
+
+### Questions to Answer:
+
+1. Is this a classification or regression problem?
+2. What is Binary Cross-Entropy loss? Why is it appropriate here?
+3. What is BPR (Bayesian Personalized Ranking) loss? How does it differ?
+4. For edge prediction, what does each loss function optimize for?
+
+### Task:
+
+Write the mathematical formula for BCE loss. Make sure you understand each term.
+
+---
+
+### ✅ Phase 2 Checkpoint
+
+Before writing any code:
+- [ ] Diagram of encoder architecture
+- [ ] Comparison table of 4 decoder approaches
+- [ ] Written justification for your decoder choice
+- [ ] Mathematical understanding of your loss function
+
+---
+
+# Phase 3: Implementation (3+ hours)
+
+Now you may write code. But go slowly and verify each step.
+
+## Task 3.1: Data Preparation
+
+Implement edge splitting using `RandomLinkSplit`.
+
+### Requirements:
+1. Create train/val/test splits (research appropriate ratios)
+2. Generate negative samples
+3. Verify your splits: print statistics to confirm they look right
+
+### Verification Questions:
+
+After implementing, answer:
+1. How many positive training edges do you have?
+2. How many negative training edges?
+3. Does the training graph remain connected?
+4. What is the overlap between train and test edges? (Should be 0!)
+
+---
+
+## Task 3.2: Model Implementation
+
+Build your encoder-decoder model.
+
+### Requirements:
+1. Encoder: GNN that produces node embeddings
+2. Decoder: Your chosen approach to predict edge probability
+3. The model should work with your prepared data
+
+### Testing Your Implementation:
+
+Before training, verify:
+1. Does your encoder produce the expected output shape?
+2. Does your decoder produce a scalar for each edge?
+3. Can you run one forward pass without errors?
+4. Does the loss compute correctly?
+
+---
+
+## Task 3.3: Training Loop
+
+Implement training.
+
+### Important Considerations:
+
+1. Which edges do you use for message passing in the encoder?
+2. Which edges do you use to compute loss?
+3. How do you batch positive and negative edges?
+
+### Implement:
+1. Training loop for N epochs
+2. Validation evaluation every E epochs
+3. Early stopping based on validation performance
+
+---
+
+## Task 3.4: Evaluation
+
+### Research Task:
+
+Learn about these metrics for link prediction:
+1. AUC-ROC
+2. Average Precision (AP)
+3. Hits@K
+4. Mean Reciprocal Rank (MRR)
+
+**For each metric, write:**
+- What it measures (in plain English)
+- When it's most appropriate
+- Its range and what values are "good"
+
+### Implement:
+
+Choose 2 metrics and implement evaluation on your test set.
+
+---
+
+### ✅ Phase 3 Checkpoint
+
+- [ ] Working data preparation with verified statistics
+- [ ] Encoder-decoder model that runs without errors
+- [ ] Training loop showing decreasing loss
+- [ ] Evaluation on 2+ metrics
+
+---
+
+# Phase 4: Analysis and Improvement (2+ hours)
+
+## Task 4.1: Baseline Comparison
+
+Implement a **non-GNN baseline** to compare against.
+
+### Options:
+
+1. **Common Neighbors:** Predict based on how many neighbors two nodes share
+2. **Random:** Random predictions
+3. **Degree heuristic:** Predict based on node degrees
+
+### Questions:
+
+1. How does your GNN compare to these simple baselines?
+2. If the GNN barely beats common neighbors, what does that tell you?
+3. When would simple heuristics be sufficient?
+
+---
+
+## Task 4.2: Error Analysis
+
+Examine where your model fails.
+
+### Tasks:
+
+1. Find 10 false positives (predicted edge, but no real edge)
+   - What do these node pairs have in common?
+   - Why might your model have predicted an edge?
+
+2. Find 10 false negatives (missed real edges)
+   - What makes these edges hard to predict?
+   - Do they share few common neighbors?
+
+3. Is there a pattern to the errors? Do they cluster in certain parts of the graph?
+
+---
+
+## Task 4.3: Architecture Ablation
+
+Try at least 2 variations of your architecture:
+
+1. Different encoder (GAT instead of GCN?)
+2. Different decoder (switch to a different approach)
+3. Different embedding dimension
+4. Different number of layers
+
+**Create a table comparing all variations** with your chosen metrics.
+
+---
+
+### ✅ Phase 4 Checkpoint
+
+- [ ] Baseline comparison table
+- [ ] Detailed error analysis (20 examples)
+- [ ] Architecture ablation table (4+ experiments)
+- [ ] Written analysis of what works and why
+
+---
+
+# Phase 5: Final Report (1 hour)
+
+## Deliverables
+
+Create a comprehensive report including:
+
+1. **Introduction:** What is link prediction? Why does it matter?
+2. **Methodology:** Your approach, with architecture diagrams
+3. **Experiments:** All your comparisons and ablations
+4. **Results:** Best metrics achieved
+5. **Discussion:** What worked? What didn't? Why?
+6. **Conclusion:** Key takeaways
+
+---
+
+## 🏆 Success Criteria
+
+- [ ] AUC > 0.85 on test set
+- [ ] Beats common neighbors baseline by 5%+
+- [ ] Comprehensive report with all sections
+- [ ] All questions answered throughout
+- [ ] At least 4 architecture variations tested
+
+---
+
+## 📚 Resources (Only When Truly Stuck)
+
+- [Link Prediction Survey Paper](https://arxiv.org/abs/2010.00906)
+- [PyG Link Prediction Tutorial](https://pytorch-geometric.readthedocs.io/en/latest/notes/tutorial.html)
+
+---
+
+**Next Project:** [Graph Classification Challenge →](../P3-Graph-Classification/)

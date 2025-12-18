@@ -1,373 +1,385 @@
-# 🎯 Project 1: Node Classification
+# 🎯 Project 1: Node Classification Challenge
 
 **Difficulty:** ⭐ Beginner  
-**Time:** 2-3 hours  
-**Goal:** Classify research papers by topic using their citation network
+**Estimated Time:** 6-10 hours  
+**Prerequisites:** Complete Modules 1-2
 
 ---
 
-## 📖 Background
+## 🎯 Your Mission
 
-You have a dataset of scientific papers where:
-- Each paper has a **feature vector** (bag-of-words)
-- Papers **cite** each other (edges)
-- Each paper belongs to one of 7 topics (labels)
+You've been hired as a data scientist at an academic research company. They have a large database of scientific papers, and they want to **automatically categorize papers by research topic** based on how they cite each other.
 
-**Your Mission:** Build a GNN that predicts the topic of papers using BOTH the paper's content AND its citation relationships!
-
----
-
-## 🗂️ Dataset: Cora
-
-| Property | Value |
-|----------|-------|
-| Papers (nodes) | 2,708 |
-| Citations (edges) | 5,429 |
-| Features per paper | 1,433 (word presence) |
-| Classes | 7 topics |
+Your task: Build a system that predicts the topic of a paper using:
+1. The paper's content (word features)
+2. Which papers it cites and is cited by (graph structure)
 
 ---
 
-## 🚀 Task 1: Load and Explore the Data
+## 📊 The Dataset
 
-### What to Do:
-1. Load the Cora dataset using PyTorch Geometric
-2. Print the number of nodes, edges, and features
-3. Check how the train/validation/test splits are defined
+You'll work with the **Cora citation network**:
+- ~2,700 research papers
+- ~5,400 citation links between papers
+- Each paper has word-presence features
+- 7 research topics to predict
 
-### Starter Code:
-```python
-from torch_geometric.datasets import Planetoid
+**Your first task:** Load this dataset and understand it thoroughly before writing any model code.
 
-# Your code here: Load Cora dataset
-dataset = ???
-data = ???
+---
 
-# Print statistics
-print(f"Nodes: {???}")
-print(f"Edges: {???}")
-print(f"Features: {???}")
-print(f"Classes: {???}")
-```
+## 🧭 Project Phases
 
-<details>
-<summary>💡 Hint 1: How to load</summary>
+This project is divided into 5 phases. **Complete each phase fully before moving to the next.**
 
-```python
-dataset = Planetoid(root='./data', name='Cora')
-data = dataset[0]  # First (only) graph
-```
-</details>
+---
 
-<details>
-<summary>💡 Hint 2: Properties to check</summary>
+# Phase 1: Data Exploration (2+ hours)
 
-- `data.num_nodes` — number of nodes
-- `data.num_edges` — number of edges  
-- `data.num_node_features` — features per node
-- `dataset.num_classes` — number of classes
-</details>
+## Task 1.1: Load and Inspect
+
+Using PyTorch Geometric, load the Cora dataset and answer these questions **in a notebook or document**:
+
+### Questions to Answer:
+
+1. How many nodes (papers) are in the graph?
+2. How many edges (citations) are there?
+3. What is the dimensionality of the node features?
+4. How many classes are there to predict?
+5. What does each node feature represent? (Research this!)
 
 <details>
-<summary>✅ Full Solution</summary>
+<summary>💡 Hint: Loading the dataset</summary>
 
-```python
-from torch_geometric.datasets import Planetoid
-
-dataset = Planetoid(root='./data', name='Cora')
-data = dataset[0]
-
-print(f"Nodes: {data.num_nodes}")
-print(f"Edges: {data.num_edges}")
-print(f"Features: {data.num_node_features}")
-print(f"Classes: {dataset.num_classes}")
-print(f"Train nodes: {data.train_mask.sum()}")
-print(f"Val nodes: {data.val_mask.sum()}")
-print(f"Test nodes: {data.test_mask.sum()}")
-```
-</details>
-
-### 🤔 Think About It:
-1. **Why is the number of training nodes so small?** (~5% of data)
-2. **How can a GNN still learn with so few labels?**
-
-<details>
-<summary>Answer</summary>
-
-GNNs leverage the **graph structure**! Even unlabeled nodes participate in message passing, spreading information through the network. This is called **semi-supervised learning**.
+Look into `torch_geometric.datasets.Planetoid`
 </details>
 
 ---
 
-## 🚀 Task 2: Build a Simple GCN Model
+## Task 1.2: Understand the Splits
 
-### What to Do:
-1. Create a 2-layer GCN model
-2. Use 16 hidden units
-3. Apply ReLU activation and dropout
+The dataset comes with predefined train/val/test splits.
 
-### 🧩 Fill in the Blanks:
-```python
-import torch
-import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
+### Questions to Answer:
 
-class GCN(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super().__init__()
-        self.conv1 = ???  # First GCN layer
-        self.conv2 = ???  # Second GCN layer
-    
-    def forward(self, x, edge_index):
-        x = self.conv1(???)  # Apply first layer
-        x = ???              # Activation function
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv2(???)  # Apply second layer
-        return x
-```
-
-### 🤔 Design Questions:
-
-**Q1: Why do we use dropout BETWEEN layers, not after the last layer?**
+1. How many nodes are in the training set?
+2. What percentage of the total nodes is this?
+3. Why do you think such a small percentage is used for training?
+4. What is "semi-supervised learning" and why does it apply here?
 
 <details>
-<summary>Answer</summary>
+<summary>💡 Hint: Accessing splits</summary>
 
-Dropout is a regularization technique. After the last layer, we want the final predictions — adding noise there would hurt accuracy. We use dropout during training to prevent overfitting.
-</details>
-
-**Q2: Why only 2 layers? What happens with 10 layers?**
-
-<details>
-<summary>Answer</summary>
-
-**Over-smoothing!** Each GCN layer averages neighbor features. With too many layers, all nodes start looking the same — their features get "smoothed out" across the entire graph.
-</details>
-
-<details>
-<summary>💡 Hint: GCNConv signature</summary>
-
-```python
-GCNConv(in_channels, out_channels)
-```
-
-Called with: `conv(x, edge_index)`
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-class GCN(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels):
-        super().__init__()
-        self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.conv2 = GCNConv(hidden_channels, out_channels)
-    
-    def forward(self, x, edge_index):
-        x = self.conv1(x, edge_index)
-        x = F.relu(x)
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = self.conv2(x, edge_index)
-        return x
-```
+Look for `train_mask`, `val_mask`, `test_mask` attributes
 </details>
 
 ---
 
-## 🚀 Task 3: Train the Model
+## Task 1.3: Analyze the Graph Structure
 
-### What to Do:
-1. Create the model, optimizer, and loss function
-2. Write a training loop for 200 epochs
-3. Only compute loss on **training nodes** (use `train_mask`)
+Before building any model, understand the graph:
 
-### 🧩 Fill in the Blanks:
-```python
-model = GCN(
-    in_channels=???, 
-    hidden_channels=16, 
-    out_channels=???
-)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+### Questions to Answer:
 
-for epoch in range(200):
-    model.train()
-    optimizer.zero_grad()
-    
-    out = model(???, ???)  # Forward pass
-    loss = F.cross_entropy(out[???], data.y[???])  # Loss on train nodes only
-    
-    loss.backward()
-    optimizer.step()
-    
-    if epoch % 50 == 0:
-        print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
-```
+1. What is the **average degree** (connections per node)?
+2. What is the **maximum degree**? The minimum?
+3. Is this graph **dense or sparse**? What percentage of all possible edges exist?
+4. Visualize a small subset of the graph (e.g., a node and its neighbors). What do you observe?
 
-### 🤔 Design Questions:
+### Reflection Questions:
 
-**Q1: Why do we compute loss ONLY on training nodes?**
+> **Why do the answers to these questions matter for building a GNN?**
+> 
+> Write 2-3 sentences explaining how graph sparsity and degree distribution might affect your model design choices.
+
+---
+
+## Task 1.4: Explore Label Distribution
+
+### Questions to Answer:
+
+1. How many papers are in each of the 7 classes?
+2. Are the classes balanced or imbalanced?
+3. Create a bar chart showing the class distribution.
+4. Does the class distribution in training match the overall distribution?
+
+---
+
+## Task 1.5: Feature Analysis
+
+### Questions to Answer:
+
+1. What is the average number of non-zero features per node?
+2. Are some features much more common than others?
+3. What preprocessing might be helpful? (Think: normalization, feature selection)
+
+---
+
+### ✅ Phase 1 Checkpoint
+
+Before moving on, you should have:
+- [ ] A notebook/document with answers to ALL questions above
+- [ ] At least one visualization of the graph
+- [ ] A bar chart of class distribution
+- [ ] Written reflections on what you learned
+
+**Do not proceed until you can explain the dataset to someone else without looking at your notes.**
+
+---
+
+# Phase 2: Baseline Model (2+ hours)
+
+Now that you understand the data, build your first model.
+
+## Task 2.1: Design Decisions
+
+Before writing code, **think through your design**:
+
+### Questions to Answer (Write down your answers!):
+
+1. What is the input to your model? (Shape? Type?)
+2. What is the output? (Shape? What does each output represent?)
+3. How many GNN layers will you use? **Justify your choice.**
+4. What hidden dimension will you use? **Justify your choice.**
+5. What activation function? Why?
+6. Will you use dropout? Why or why not?
+
+> **Important:** There are no "right" answers here. The goal is to think through your choices and be able to defend them.
+
+---
+
+## Task 2.2: Build the Model
+
+Now implement your design.
+
+**Requirements:**
+- Use GCNConv layers from PyTorch Geometric
+- The model should be a class that extends `nn.Module`
+- It should have a `forward` method that takes node features and edge index
+
+**NO scaffolding code provided.** Build it yourself based on what you learned in Module 2.
 
 <details>
-<summary>Answer</summary>
+<summary>💡 Hint: Stuck on structure?</summary>
 
-This is semi-supervised learning! We only have labels for a few nodes. The unlabeled nodes still participate in message passing (the forward pass), but we can only compute loss where we have ground truth.
-</details>
+Your model needs:
+1. One or more GCNConv layers
+2. Activation functions between layers
+3. Optionally: dropout, batch normalization
 
-**Q2: What would happen if we used ALL nodes for loss?**
-
-<details>
-<summary>Answer</summary>
-
-We'd be cheating! The test nodes' labels should be hidden during training. Plus, validation nodes are held out to tune hyperparameters.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-model = GCN(
-    in_channels=dataset.num_features,
-    hidden_channels=16,
-    out_channels=dataset.num_classes
-)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=5e-4)
-
-for epoch in range(200):
-    model.train()
-    optimizer.zero_grad()
-    
-    out = model(data.x, data.edge_index)
-    loss = F.cross_entropy(out[data.train_mask], data.y[data.train_mask])
-    
-    loss.backward()
-    optimizer.step()
-    
-    if epoch % 50 == 0:
-        print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
-```
+Look at the GCNConv documentation for the expected input/output format.
 </details>
 
 ---
 
-## 🚀 Task 4: Evaluate on Test Set
+## Task 2.3: Training Loop
 
-### What to Do:
-1. Switch model to evaluation mode
-2. Get predictions using `argmax`
-3. Compute accuracy on test nodes only
+Write your own training loop.
 
-### 🧩 Your Code:
-```python
-model.eval()
-with torch.no_grad():
-    out = model(data.x, data.edge_index)
-    pred = ???  # Get predicted class (hint: argmax)
-    
-    correct = ???  # Count correct predictions on test set
-    accuracy = ???
-    
-print(f"Test Accuracy: {accuracy:.4f}")
-```
+### Requirements:
+1. Use an appropriate loss function (think: what kind of problem is this?)
+2. Use an optimizer (Adam is a common choice)
+3. Train for enough epochs to see convergence
+4. Print loss every N epochs
+5. Compute accuracy on the validation set periodically
 
-### 🎯 Expected Result:
-- GCN should achieve ~**79-82%** accuracy
-- If much lower, check your implementation!
+### Questions to Answer:
 
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-model.eval()
-with torch.no_grad():
-    out = model(data.x, data.edge_index)
-    pred = out.argmax(dim=1)
-    
-    correct = (pred[data.test_mask] == data.y[data.test_mask]).sum()
-    accuracy = int(correct) / int(data.test_mask.sum())
-    
-print(f"Test Accuracy: {accuracy:.4f}")
-```
-</details>
+1. Why do you only compute loss on **training nodes** even though all nodes participate in message passing?
+2. What loss function did you choose and why?
+3. How did you decide when to stop training?
 
 ---
 
-## 🚀 Bonus Challenge: Beat GCN with GAT!
+## Task 2.4: Evaluate on Test Set
 
-### Mission:
-Replace GCN with GAT (Graph Attention Network) and see if you can get better accuracy!
+After training, evaluate on the **test set** (not validation!).
 
-### Changes Needed:
-1. Import `GATConv` instead of `GCNConv`
-2. Add `heads=8` for multi-head attention
-3. Adjust hidden dimensions (GAT concatenates heads!)
+### Questions to Answer:
 
-### 🤔 Think About:
-- **Why might GAT perform better?**
-- **What's the tradeoff?**
-
-<details>
-<summary>💡 Hint: GAT changes</summary>
-
-```python
-from torch_geometric.nn import GATConv
-
-# Layer 1: 8 heads, each outputs 8 features → total 64
-self.conv1 = GATConv(in_channels, 8, heads=8, dropout=0.6)
-
-# Layer 2: Input is 64 (8 heads × 8 features)
-self.conv2 = GATConv(64, out_channels, heads=1, concat=False)
-```
-</details>
-
-<details>
-<summary>✅ Full GAT Solution</summary>
-
-```python
-from torch_geometric.nn import GATConv
-
-class GAT(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, heads=8):
-        super().__init__()
-        self.conv1 = GATConv(in_channels, hidden_channels, heads=heads, dropout=0.6)
-        self.conv2 = GATConv(hidden_channels * heads, out_channels, heads=1, 
-                             concat=False, dropout=0.6)
-    
-    def forward(self, x, edge_index):
-        x = F.dropout(x, p=0.6, training=self.training)
-        x = self.conv1(x, edge_index)
-        x = F.elu(x)
-        x = F.dropout(x, p=0.6, training=self.training)
-        x = self.conv2(x, edge_index)
-        return x
-
-# Expected: ~83% accuracy (better than GCN!)
-```
-</details>
+1. What is your test accuracy?
+2. Is it higher or lower than validation accuracy? What might explain this?
+3. Are there classes your model does particularly well or poorly on? Why might this be?
 
 ---
 
-## ✅ Project Checklist
+### ✅ Phase 2 Checkpoint
 
-- [ ] Loaded and explored Cora dataset
-- [ ] Built a 2-layer GCN model
-- [ ] Trained with proper train/test split
-- [ ] Achieved ~80% accuracy
-- [ ] (Bonus) Beat GCN with GAT
-
----
-
-## 🎓 What You Learned
-
-| Concept | Key Insight |
-|---------|-------------|
-| **Semi-supervised** | Learn from few labels + graph structure |
-| **GCN layer** | Aggregates neighbor information |
-| **Over-smoothing** | Why we use 2-3 layers, not more |
-| **Train mask** | Only compute loss on labeled nodes |
-| **GAT advantage** | Learned attention > fixed weights |
+Before moving on:
+- [ ] Working GCN model (your own code, not copied)
+- [ ] Training loop that shows decreasing loss
+- [ ] Test accuracy of at least 70% (aim for 80%+)
+- [ ] Written answers to all design questions
 
 ---
 
-**Next Challenge:** [Project 2: Link Prediction →](../P2-Link-Prediction/)
+# Phase 3: Understanding Your Model (1+ hours)
+
+## Task 3.1: Ablation Study
+
+Now we'll understand **why** your model works.
+
+### Experiment 1: What if we removed the graph?
+
+Create a baseline that ignores the graph structure:
+- Just use a simple MLP on node features
+- Compare accuracy to your GNN
+
+**Question:** How much did the graph structure help? Why?
+
+### Experiment 2: Number of layers
+
+Try your model with:
+- 1 layer
+- 2 layers
+- 3 layers
+- 5 layers
+- 10 layers
+
+**Questions:**
+1. Which number of layers works best? 
+2. What happens with many layers? (This phenomenon has a name — research it!)
+3. Why do you think this happens?
+
+### Experiment 3: Hidden dimensions
+
+Try different hidden dimensions: 4, 16, 64, 256
+
+**Question:** What's the tradeoff? Is bigger always better?
+
+---
+
+## Task 3.2: Error Analysis
+
+Look at the nodes your model got **wrong**:
+
+### Questions to Answer:
+
+1. Pick 5 incorrectly classified test nodes. What are their predicted vs true labels?
+2. Do these errors have anything in common? (e.g., low degree nodes? Certain classes?)
+3. Look at the neighbors of an incorrectly classified node. What are their labels?
+4. Can you form a hypothesis about when your model fails?
+
+---
+
+### ✅ Phase 3 Checkpoint
+
+- [ ] Comparison table: GNN vs MLP accuracy
+- [ ] Graph showing accuracy vs number of layers
+- [ ] Written analysis of at least 5 errors
+- [ ] Hypothesis about model failure modes
+
+---
+
+# Phase 4: Improvement Challenge (2+ hours)
+
+Your baseline works. Now make it better!
+
+## Task 4.1: Research Better Architectures
+
+Before implementing improvements, **research** these questions:
+
+1. What is GAT (Graph Attention Networks)? How does it differ from GCN?
+2. What is the potential advantage of attention for this problem?
+3. What other architectures might help? (GraphSAGE? GIN?)
+
+**Write a short paragraph comparing at least 2 architectures and explaining which you want to try next and why.**
+
+---
+
+## Task 4.2: Implement One Improvement
+
+Choose ONE improvement and implement it:
+
+**Option A:** Replace GCN with GAT
+- How do attention heads work?
+- How do you handle the output dimension with multiple heads?
+
+**Option B:** Add residual connections
+- What are residual connections?
+- How do they help with deep networks?
+
+**Option C:** Try a different aggregation function
+- What alternatives exist to mean aggregation?
+- Why might they help?
+
+### After implementing:
+1. Compare test accuracy to your baseline
+2. Did it help? By how much?
+3. What did you learn about why it did or didn't help?
+
+---
+
+## Task 4.3: Hyperparameter Tuning
+
+Systematically tune at least 3 hyperparameters:
+- Learning rate
+- Hidden dimension
+- Dropout rate
+- Number of layers
+- Weight decay
+
+**Create a table showing your experiments and results.**
+
+What combination worked best?
+
+---
+
+### ✅ Phase 4 Checkpoint
+
+- [ ] Written comparison of architectures (before implementing)
+- [ ] Implemented at least one improvement
+- [ ] Hyperparameter tuning table with 10+ experiments
+- [ ] Final best accuracy recorded
+
+---
+
+# Phase 5: Documentation and Reflection (1 hour)
+
+## Task 5.1: Write a Report
+
+Create a short report (1-2 pages) containing:
+
+1. **Problem Statement:** What were you trying to solve?
+2. **Approach:** What methods did you try?
+3. **Results:** What accuracy did you achieve? Include a table.
+4. **Key Insights:** What was the most surprising thing you learned?
+5. **Future Work:** What would you try if you had more time?
+
+---
+
+## Task 5.2: Reflection Questions
+
+Answer these questions honestly:
+
+1. What was the hardest part of this project?
+2. Where did you get stuck? How did you get unstuck?
+3. What concept became clearer through implementation?
+4. What would you do differently if starting over?
+
+---
+
+## 🏆 Project Complete!
+
+Congratulations! You've completed the node classification project.
+
+**Your deliverables:**
+- [ ] Jupyter notebook with all code
+- [ ] Written answers to all questions
+- [ ] Comparison tables and visualizations
+- [ ] Final report (1-2 pages)
+- [ ] Best model achieving 80%+ accuracy
+
+---
+
+## 📚 Resources (Use Only When Truly Stuck)
+
+- [PyTorch Geometric Documentation](https://pytorch-geometric.readthedocs.io/)
+- [GCN Original Paper](https://arxiv.org/abs/1609.02907)
+- [GAT Original Paper](https://arxiv.org/abs/1710.10903)
+
+Remember: Struggling is part of learning! Try to solve problems yourself before looking things up.
+
+---
+
+**Next Project:** [Link Prediction Challenge →](../P2-Link-Prediction/)

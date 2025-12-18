@@ -1,454 +1,394 @@
-# 🧬 Project 3: Graph Classification
+# 🧬 Project 3: Graph Classification Challenge
 
 **Difficulty:** ⭐⭐ Intermediate  
-**Time:** 3-4 hours  
-**Goal:** Classify entire molecules as toxic or non-toxic
+**Estimated Time:** 8-12 hours  
+**Prerequisites:** Complete Projects 1-2 + Modules 1-2
 
 ---
 
-## 📖 Background
+## 🎯 Your Mission
 
-So far you've classified **nodes**. Now classify **entire graphs**!
+You've been hired by a pharmaceutical company. They have thousands of molecular compounds and need to predict which ones are mutagenic (cause DNA mutations) without expensive lab tests.
 
-**Real-world uses:**
-- 💊 Drug toxicity prediction
-- 🧪 Molecule property prediction
-- 🔬 Protein function classification
-- 📄 Document classification (as word graphs)
+**Your task:** Build a GNN that classifies **entire molecules** as mutagenic or non-mutagenic.
 
-**Your Mission:** Build a GNN that reads a molecule and predicts: Toxic or Safe?
+This is fundamentally different from Projects 1 and 2: you're classifying **whole graphs**, not nodes or edges.
 
 ---
 
-## 🧠 The Key Challenge
+## 🧠 Before You Begin: Conceptual Foundation
 
-For node classification, each node gets a prediction. But for graph classification:
+**No code until these are answered!**
 
-```
-Input:  Many graphs, each with different numbers of nodes
-Output: ONE label per graph
+### The Core Challenge
 
-Challenge: How do you get a SINGLE vector from a graph with 50 nodes?
-```
+Think through this carefully:
 
-**The answer: POOLING** 🏊
+1. In node classification, each node has features and you predict a label for each node.
+2. In graph classification, you have a **whole graph** with many nodes, but only **ONE label** for the entire graph.
+3. How do you go from "many node embeddings" to "one graph embedding"?
 
----
+### Fundamental Questions
 
-## 🚀 Task 1: Load and Explore MUTAG Dataset
+1. If Graph A has 10 nodes and Graph B has 50 nodes, how can they both produce embeddings of the same size?
+2. What information might be lost when you compress a variable-size graph into a fixed-size vector?
+3. What information should definitely be preserved?
 
-### About MUTAG:
-| Property | Value |
-|----------|-------|
-| Molecules (graphs) | 188 |
-| Classes | 2 (mutagenic or not) |
-| Avg. nodes per graph | ~18 atoms |
-| Node features | 7 (atom types) |
+### Research Before Starting
 
-### What to Do:
-1. Load MUTAG dataset
-2. Print statistics
-3. Visualize one molecule
+Research and write short explanations (3-4 sentences each):
 
-### 🧩 Starter Code:
-```python
-from torch_geometric.datasets import TUDataset
-
-dataset = TUDataset(root='./data', name='MUTAG')
-
-print(f"Number of graphs: {???}")
-print(f"Number of classes: {???}")
-print(f"Number of node features: {???}")
-
-# Look at one graph
-graph = dataset[0]
-print(f"\nFirst graph:")
-print(f"  Nodes: {???}")
-print(f"  Edges: {???}")
-print(f"  Label: {???}")
-```
-
-### 🤔 Think About It:
-
-**Q: Why do different graphs have different numbers of nodes?**
-
-<details>
-<summary>Answer</summary>
-
-Each graph is a different molecule! A water molecule (H₂O) has 3 atoms, while a drug molecule might have 50+ atoms. This is fundamentally different from images, which always have fixed dimensions.
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-from torch_geometric.datasets import TUDataset
-
-dataset = TUDataset(root='./data', name='MUTAG')
-
-print(f"Number of graphs: {len(dataset)}")
-print(f"Number of classes: {dataset.num_classes}")
-print(f"Number of node features: {dataset.num_node_features}")
-
-graph = dataset[0]
-print(f"\nFirst graph:")
-print(f"  Nodes: {graph.num_nodes}")
-print(f"  Edges: {graph.num_edges}")
-print(f"  Label: {graph.y.item()}")
-```
-</details>
+1. What is "graph pooling" or "readout"?
+2. What are at least 3 different pooling methods? (Name them and describe what they do)
+3. What is the difference between "flat" and "hierarchical" pooling?
+4. What makes molecular graphs different from social networks?
 
 ---
 
-## 🚀 Task 2: Create Train/Test Split
+# Phase 1: Understanding Molecular Graphs (2+ hours)
 
-### The Challenge:
-Split **graphs** (not nodes!) into train and test sets.
+## Task 1.1: Molecule as Graphs
 
-### 🧩 Your Code:
-```python
-from torch_geometric.loader import DataLoader
-import torch
+Before touching any code, understand the domain.
 
-# Shuffle dataset
-torch.manual_seed(42)
-dataset = dataset.shuffle()
+### Questions to Answer:
 
-# Split: 80% train, 20% test
-n = len(dataset)
-train_dataset = ???
-test_dataset = ???
+1. In a molecular graph:
+   - What do nodes represent?
+   - What do edges represent?
+   - What might node features include?
+   - What might edge features include?
 
-# Create DataLoaders (batch multiple graphs!)
-train_loader = DataLoader(train_dataset, batch_size=???, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=???, shuffle=False)
+2. Draw (by hand) the graph representation of:
+   - Water (H₂O)
+   - Methane (CH₄)
+   - Benzene (C₆H₆)
 
-print(f"Training graphs: {len(train_dataset)}")
-print(f"Test graphs: {len(test_dataset)}")
-```
+3. Why is molecular representation as a graph natural?
 
-### 🤔 Key Question:
-
-**Q: How can we "batch" graphs with different sizes?**
-
-<details>
-<summary>Answer</summary>
-
-PyTorch Geometric creates a **mega-graph**! It combines all graphs in the batch into one large disconnected graph, with a `batch` tensor to track which node belongs to which graph.
-
-```
-Batch of 3 graphs → One big graph with 3 disconnected components
-batch tensor: [0,0,0,0, 1,1,1, 2,2,2,2,2]  # Which graph each node belongs to
-```
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-torch.manual_seed(42)
-dataset = dataset.shuffle()
-
-n = len(dataset)
-train_dataset = dataset[:int(0.8 * n)]
-test_dataset = dataset[int(0.8 * n):]
-
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
-
-print(f"Training graphs: {len(train_dataset)}")
-print(f"Test graphs: {len(test_dataset)}")
-```
-</details>
+4. What information about a molecule is captured by the graph? What is NOT captured?
 
 ---
 
-## 🚀 Task 3: Build Graph Classification Model
+## Task 1.2: The MUTAG Dataset
 
-### The Architecture:
-```
-Nodes → [GNN Layers] → Node Embeddings → [POOLING] → Graph Embedding → [MLP] → Class
-```
+You'll use the MUTAG dataset of mutagenic compounds.
 
-### 🧩 Fill in the Blanks:
+### Research Questions:
 
-```python
-from torch_geometric.nn import GCNConv, global_mean_pool
-import torch.nn.functional as F
+1. What is mutagenicity? Why is it important to predict?
+2. How many molecules are in MUTAG?
+3. How are molecules represented (what features)?
+4. What is the class balance?
 
-class GraphClassifier(torch.nn.Module):
-    def __init__(self, num_features, hidden_dim, num_classes):
-        super().__init__()
-        # GNN layers
-        self.conv1 = ???
-        self.conv2 = ???
-        self.conv3 = ???
-        
-        # Final classifier
-        self.classifier = torch.nn.Linear(hidden_dim, num_classes)
-    
-    def forward(self, x, edge_index, batch):
-        # 1. Node embeddings (3 GNN layers)
-        x = F.relu(self.conv1(x, edge_index))
-        x = F.relu(self.conv2(x, edge_index))
-        x = self.conv3(x, edge_index)
-        
-        # 2. Pool: aggregate all nodes in each graph
-        x = ???(x, batch)  # Which pooling function?
-        
-        # 3. Classify
-        x = self.classifier(x)
-        return x
-```
+### After Loading the Data:
 
-### 🤔 Design Questions:
+(You may write code now just to load and inspect)
 
-**Q1: What does `global_mean_pool(x, batch)` do?**
-
-<details>
-<summary>Answer</summary>
-
-It averages all node embeddings within each graph:
-```
-Graph 0: nodes [0,1,2] → mean([x_0, x_1, x_2]) → graph_embedding_0
-Graph 1: nodes [3,4]   → mean([x_3, x_4]) → graph_embedding_1
-```
-</details>
-
-**Q2: Why do we need the `batch` tensor?**
-
-<details>
-<summary>Answer</summary>
-
-When we batch multiple graphs, they're combined into one big graph. The `batch` tensor tells us which nodes belong to which original graph, so we can pool them correctly.
-</details>
-
-**Q3: What if we used `global_max_pool` instead?**
-
-<details>
-<summary>Answer</summary>
-
-`max_pool` takes the maximum value per dimension across all nodes. This captures the "strongest signal" in each graph. 
-
-- `mean_pool`: Good for overall properties
-- `max_pool`: Good for detecting presence of specific features
-- You can even combine both!
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-from torch_geometric.nn import GCNConv, global_mean_pool
-
-class GraphClassifier(torch.nn.Module):
-    def __init__(self, num_features, hidden_dim, num_classes):
-        super().__init__()
-        self.conv1 = GCNConv(num_features, hidden_dim)
-        self.conv2 = GCNConv(hidden_dim, hidden_dim)
-        self.conv3 = GCNConv(hidden_dim, hidden_dim)
-        self.classifier = torch.nn.Linear(hidden_dim, num_classes)
-    
-    def forward(self, x, edge_index, batch):
-        x = F.relu(self.conv1(x, edge_index))
-        x = F.relu(self.conv2(x, edge_index))
-        x = self.conv3(x, edge_index)
-        
-        x = global_mean_pool(x, batch)
-        x = self.classifier(x)
-        return x
-```
-</details>
+1. What is the average number of atoms per molecule?
+2. What is the range (min and max)?
+3. What is the average number of bonds per molecule?
+4. Create a histogram of molecule sizes.
 
 ---
 
-## 🚀 Task 4: Training Loop
+## Task 1.3: The Variable Size Problem
 
-### 🧩 Fill in the Blanks:
+This is the crux of graph classification.
 
-```python
-model = GraphClassifier(
-    num_features=dataset.num_node_features,
-    hidden_dim=64,
-    num_classes=dataset.num_classes
-)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+### Think Through:
 
-def train_epoch():
-    model.train()
-    total_loss = 0
-    
-    for batch in train_loader:
-        optimizer.zero_grad()
-        
-        # Forward pass - notice we pass batch.batch!
-        out = model(???, ???, ???)
-        
-        # Loss
-        loss = F.cross_entropy(out, ???)
-        
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    
-    return total_loss / len(train_loader)
+```
+Molecule A: 17 atoms → 17 node embeddings of size 64 → ??? → 1 class prediction
+Molecule B: 45 atoms → 45 node embeddings of size 64 → ??? → 1 class prediction
+
+Both need to produce a fixed-size representation for the classifier!
 ```
 
-### 🤔 Common Mistake:
+### Questions:
 
-**Q: What's `batch.batch` vs `batch`?**
+1. If you just concatenate all node embeddings, what problems arise?
+2. If you average all node embeddings, what information is lost?
+3. If you sum all node embeddings, what changes with molecule size?
+4. If you take max over all node embeddings, what is preserved?
 
-<details>
-<summary>Answer</summary>
+### Compare (Write 2-3 sentences for each):
 
-Confusing naming, but important!
+1. **Mean pool:** Average of all node embeddings
+2. **Sum pool:** Sum of all node embeddings
+3. **Max pool:** Element-wise maximum across nodes
+4. **Attention pool:** Weighted sum based on learned attention
 
-- `batch` (the variable): A Batch object containing all data for multiple graphs
-- `batch.batch` (the attribute): A tensor telling which graph each node belongs to
-
-```python
-# batch = Batch object with x, edge_index, y, batch...
-# batch.batch = tensor([0,0,0, 1,1, 2,2,2,2, ...])
-```
-</details>
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-def train_epoch():
-    model.train()
-    total_loss = 0
-    
-    for batch in train_loader:
-        optimizer.zero_grad()
-        out = model(batch.x, batch.edge_index, batch.batch)
-        loss = F.cross_entropy(out, batch.y)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    
-    return total_loss / len(train_loader)
-
-# Train
-for epoch in range(100):
-    loss = train_epoch()
-    if epoch % 20 == 0:
-        print(f"Epoch {epoch}: Loss = {loss:.4f}")
-```
-</details>
+For each: What are the pros and cons? When would each be best?
 
 ---
 
-## 🚀 Task 5: Evaluate
+### ✅ Phase 1 Checkpoint
 
-### 🧩 Your Implementation:
-
-```python
-@torch.no_grad()
-def test(loader):
-    model.eval()
-    correct = 0
-    total = 0
-    
-    for batch in loader:
-        out = model(batch.x, batch.edge_index, batch.batch)
-        pred = ???  # Get predicted class
-        correct += ???  # Count correct
-        total += ???    # Count total
-    
-    return correct / total
-
-train_acc = test(train_loader)
-test_acc = test(test_loader)
-print(f"Train Accuracy: {train_acc:.4f}")
-print(f"Test Accuracy: {test_acc:.4f}")
-```
-
-### 🎯 Expected Results:
-- Test Accuracy: ~75-85%
-- Higher with better architecture!
-
-<details>
-<summary>✅ Full Solution</summary>
-
-```python
-@torch.no_grad()
-def test(loader):
-    model.eval()
-    correct = 0
-    total = 0
-    
-    for batch in loader:
-        out = model(batch.x, batch.edge_index, batch.batch)
-        pred = out.argmax(dim=1)
-        correct += (pred == batch.y).sum().item()
-        total += batch.y.size(0)
-    
-    return correct / total
-
-train_acc = test(train_loader)
-test_acc = test(test_loader)
-print(f"Train Accuracy: {train_acc:.4f}")
-print(f"Test Accuracy: {test_acc:.4f}")
-```
-</details>
+- [ ] Hand-drawn molecular graphs (at least 3)
+- [ ] Written answers about molecular representation
+- [ ] Dataset statistics and histogram
+- [ ] Comparison table of 4+ pooling methods
 
 ---
 
-## 🚀 Bonus: Try GIN for Better Results!
+# Phase 2: Batching Challenge (2+ hours)
 
-GIN (Graph Isomorphism Network) is designed for graph classification!
+This is trickier than it sounds. Understand it deeply.
 
-### 🤔 Why GIN?
+## Task 2.1: The Batching Problem
 
-<details>
-<summary>Answer</summary>
+In image classification, batching is easy: stack images (all same size).
 
-GIN is **maximally powerful** among message passing GNNs. It uses sum aggregation (not mean), which preserves more structural information. This matters for distinguishing different molecular structures!
-</details>
+In graph classification:
+- Graph 1: 10 nodes
+- Graph 2: 25 nodes  
+- Graph 3: 8 nodes
 
-### Challenge: Swap GCNConv for GINConv
+How do you batch these?
 
-<details>
-<summary>💡 Hint</summary>
+### Questions:
 
-```python
-from torch_geometric.nn import GINConv
+1. Can you pad graphs to the same size? What are the problems with this?
+2. What is PyG's approach to batching graphs?
+3. What is the "batch" tensor and what does it contain?
+4. If you batch 3 graphs with 10, 25, and 8 nodes respectively:
+   - How many total nodes in the batch?
+   - What is the shape of the batch tensor?
+   - What values does the batch tensor contain?
 
-# GIN needs an MLP inside each layer
-mlp = torch.nn.Sequential(
-    torch.nn.Linear(in_dim, hidden),
-    torch.nn.ReLU(),
-    torch.nn.Linear(hidden, hidden)
-)
-conv = GINConv(mlp)
-```
-</details>
+### Critical Understanding:
 
----
-
-## ✅ Project Checklist
-
-- [ ] Loaded and explored MUTAG dataset
-- [ ] Created graph-level train/test splits
-- [ ] Built model with GNN + pooling
-- [ ] Understood batching of variable-size graphs
-- [ ] Achieved ~80% test accuracy
-- [ ] (Bonus) Tried GIN for better results
+Draw a diagram showing:
+1. Three separate graphs (before batching)
+2. The combined "mega-graph" (after batching)
+3. Explain how the batch tensor tracks graph membership
 
 ---
 
-## 🎓 What You Learned
+## Task 2.2: Pooling with Batches
 
-| Concept | Key Insight |
-|---------|-------------|
-| **Graph classification** | One label per entire graph |
-| **Pooling** | Aggregate node features → graph feature |
-| **Batching graphs** | Combine into one mega-graph |
-| **batch tensor** | Tracks which node → which graph |
-| **GIN** | Best for graph-level tasks |
+Here's where it gets interesting.
+
+### Question:
+
+If you have a batched mega-graph with 43 nodes, and you apply mean pooling:
+- Do you take the mean of ALL 43 nodes? 
+- Or the mean within each original graph?
+
+### Task:
+
+Explain (in your own words) how `global_mean_pool(x, batch)` works:
+1. What is `x`? What is its shape?
+2. What is `batch`? What is its shape?
+3. What is the output? What is its shape?
+4. Write pseudocode for what this function does.
 
 ---
 
-**Next Challenge:** [Project 4: Molecular Property Prediction →](../P4-Molecular-Properties/)
+## Task 2.3: Forward Pass Design
+
+Before writing code, design your forward pass on paper.
+
+### For a batch of graphs:
+
+1. Input: What shapes do `x`, `edge_index`, and `batch` have?
+2. After GNN layers: What shape is `x`?
+3. After pooling: What shape is `x`?
+4. After classifier: What shape is the output?
+
+**Draw a complete diagram showing all shapes at each step.**
+
+---
+
+### ✅ Phase 2 Checkpoint
+
+- [ ] Diagram of batching 3 graphs
+- [ ] Explanation of batch tensor
+- [ ] Pseudocode for global_mean_pool
+- [ ] Complete forward pass diagram with shapes
+
+---
+
+# Phase 3: Architecture Design (2+ hours)
+
+## Task 3.1: GNN Backbone Selection
+
+### Questions to Consider:
+
+1. You learned about GCN, GAT, and GraphSAGE. Which might be best for molecules?
+2. What is GIN (Graph Isomorphism Network)? Why was it designed?
+3. What does "as powerful as the WL test" mean?
+4. Why might GIN be particularly good for graph classification?
+
+### Research Task:
+
+Read about the Weisfeiler-Lehman graph isomorphism test:
+1. What problem does it solve?
+2. How is it related to GNN expressiveness?
+3. What is the key difference between sum aggregation and mean aggregation for expressiveness?
+
+---
+
+## Task 3.2: Depth and Over-smoothing
+
+### Questions:
+
+1. For molecular graphs with diameter ~8, how many GNN layers might you need?
+2. If you use too many layers, what happens? (Think back to Project 1)
+3. What techniques can help with deeper networks?
+
+### Design Decision:
+
+Decide how many GNN layers you'll use. **Write a justification** (3-4 sentences) for your choice.
+
+---
+
+## Task 3.3: Complete Architecture Design
+
+Design your complete architecture on paper:
+
+1. Number and type of GNN layers
+2. Hidden dimensions
+3. Activations
+4. Pooling strategy
+5. Classifier (how many layers? dimensions?)
+6. Dropout/regularization
+
+**Create a diagram showing all components.**
+
+---
+
+### ✅ Phase 3 Checkpoint
+
+- [ ] Research notes on GIN and WL test
+- [ ] Architecture diagram with all components
+- [ ] Written justification for each design choice
+- [ ] Parameter count estimate
+
+---
+
+# Phase 4: Implementation and Experimentation (3+ hours)
+
+Now code.
+
+## Task 4.1: Implement Base Model
+
+Build your designed model. Do NOT look at tutorials — implement from your design.
+
+### Verify:
+1. Model runs without errors on one batch
+2. Output shape is [batch_size, num_classes]
+3. Loss computes correctly
+
+---
+
+## Task 4.2: Training Pipeline
+
+Implement:
+1. Data splits (train/test) — decide on split ratio and justify
+2. DataLoader with appropriate batch size
+3. Training loop
+4. Validation monitoring
+
+### Questions After First Training:
+
+1. What accuracy did you achieve?
+2. Is the model overfitting? How do you know?
+3. What does the loss curve look like?
+
+---
+
+## Task 4.3: Pooling Ablation
+
+This is important: compare pooling strategies!
+
+Implement and compare:
+1. Global mean pooling
+2. Global max pooling
+3. Global add (sum) pooling
+4. Combination (mean + max concatenated)
+
+**Create a table showing accuracy for each.**
+
+Which works best? Why do you think so?
+
+---
+
+## Task 4.4: Architecture Ablation
+
+Experiment with:
+1. Different number of layers (2, 3, 4, 5)
+2. Different GNN types (GCN vs GIN)
+3. Different hidden dimensions
+
+**Create a table with at least 8 experiments.**
+
+---
+
+### ✅ Phase 4 Checkpoint
+
+- [ ] Working model with documented accuracy
+- [ ] Pooling comparison table
+- [ ] Architecture ablation table
+- [ ] Best configuration identified
+
+---
+
+# Phase 5: Advanced Exploration (Optional, 2+ hours)
+
+## Task 5.1: Attention Pooling
+
+Implement a simple attention-based pooling:
+- Learn a weight for each node
+- Weighted sum instead of simple mean
+
+Does it improve accuracy?
+
+---
+
+## Task 5.2: Edge Features
+
+MUTAG has edge features (bond types). Are you using them?
+
+Investigate:
+1. How to incorporate edge features in your GNN
+2. Does it improve accuracy?
+
+---
+
+## Task 5.3: Different Dataset
+
+Try your model on a different dataset:
+- PROTEINS
+- ENZYMES
+- NCI1
+
+Does your best architecture transfer?
+
+---
+
+# Phase 6: Final Deliverables
+
+## Report Requirements
+
+1. **Introduction:** Graph classification problem and challenges
+2. **Dataset:** Complete analysis of MUTAG
+3. **Method:** Your architecture with diagrams
+4. **Experiments:** All ablation results with tables
+5. **Discussion:** What worked? What didn't?
+6. **Conclusion:** Key learnings
+
+---
+
+## 🏆 Success Criteria
+
+- [ ] Test accuracy > 75% (aim for 85%+)
+- [ ] At least 2 pooling methods compared
+- [ ] At least 8 architecture experiments
+- [ ] Complete report with all sections
+- [ ] All questions answered throughout project
+
+---
+
+**Next Project:** [Molecular Property Prediction Challenge →](../P4-Molecular-Properties/)
